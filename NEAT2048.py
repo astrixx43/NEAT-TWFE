@@ -6,10 +6,13 @@ import random
 from TWFE import get_board
 import math
 import time
-rightmost = [0]
-timeout = [200]
+# TODO Impelment visualization for network
 
+timeout = [.200]
+MAX_TIME = .300
 board = get_board()
+controller = {}
+board.update()
 
 ButtonNames = [
     "Up",
@@ -24,20 +27,20 @@ InputSize = 15
 Inputs = InputSize + 1
 Outputs = len(ButtonNames)
 
-Population = 300
+Population = 600
 DeltaDisjoint = 2.0
 DeltaWeights = 0.4
-DeltaThreshold = 1.0
+DeltaThreshold = 2.7
 
 StaleSpecies = 15
 
-MutateConnectionsChance = 0.25
+MutateConnectionsChance = 0.40
 PerturbChance = 0.90
 CrossoverChance = 0.75
-LinkMutationChance = 2.0
+LinkMutationChance = 2.7
 NodeMutationChance = 0.50
 BiasMutationChance = 0.40
-StepSize = 0.1
+StepSize = 0.3
 DisableMutationChance = 0.4
 EnableMutationChance = 0.2
 
@@ -55,7 +58,9 @@ def getScore():
 def getTiles(x, y):
     num = board.tiles[x, y]['text'].strip()
     if num.isnumeric():
-        return int(num)
+        # Normalize inputs
+        return math.log2(int(num)) / 16
+        # return int(num)
     return 0
 
 
@@ -70,12 +75,13 @@ def getInputs():
     return inps
 
 
-def sigmoid(x):
-    return 2 / (1 + math.exp(-4.9 * x)) - 1
+def sigmoid(x) -> float:
+    # return 1 / (1 + math.exp(-x))
+    return (2 / (1 + math.exp(-2 * x)))
 
 
 def newInnovation():
-    pool["innovation"] = pool["innovation"] + 1
+    pool["innovation"] += 1
     return pool["innovation"]
 
 
@@ -85,7 +91,7 @@ def newPool():
     pool["generation"] = 0
     pool["innovation"] = Outputs
     pool['currentSpecies'] = 0
-    pool["currentGenome"] = 0
+    pool['currentGenome'] = 0
     pool["currentFrame"] = 0
     pool["maxFitness"] = 0
 
@@ -126,11 +132,13 @@ def copyGenome(genome):
     genome2 = newGenome()
 
     for g in genome["genes"]:
-        genome2['genes'].append(copyGene(genome['genes'][g]))
+        genome2['genes'].append(copyGene(g))
+
+    # copyNetwork(genome, genome2)
+    genome2['fitness'] = 0
 
     genome2['maxneuron'] = genome['maxneuron']
-    genome2["mutationRates"]["connections"] = genome["mutationRates"][
-        "connections"]
+    genome2["mutationRates"]["connections"] = genome["mutationRates"]["connections"]
     genome2["mutationRates"]["link"] = genome["mutationRates"]["link"]
     genome2["mutationRates"]["bias"] = genome["mutationRates"]["bias"]
     genome2["mutationRates"]["node"] = genome["mutationRates"]["node"]
@@ -144,7 +152,23 @@ def basicGenome():
     genome = newGenome()
     innovation = 1
     genome['maxneuron'] = Inputs
+
+    # for o in range(Outputs):
+    #     newLink = newGene()
+    #     newLink['into'] = random.randint(0, Inputs - 1)
+    #     newLink['out'] = MaxNodes + o
+    #     newLink['weight'] = random.uniform(-2, 2)
+    #     newLink["innovation"] = newInnovation()
+    #     genome['genes'].append(newLink)
+
     mutate(genome)
+
+
+    # May Want to comment
+
+    # linkMutate(genome, False)
+    # linkMutate(genome, True)
+    # linkMutate(genome, False)
 
     return genome
 
@@ -187,15 +211,18 @@ def generateNetwork(genome):
 
     for j in range(Outputs):
         network['neurons'][MaxNodes + j] = newNeuron()
+
     genome['genes'] = sorted(genome['genes'], key=lambda d: d['out'])
 
-    for i in range(len(genome["genes"])):
-        gene = genome['genes'][i]
+    for k in range(len(genome["genes"])):
+        gene = genome['genes'][k]
         if gene['enabled']:
             if gene['out'] not in network["neurons"]:
                 network["neurons"][gene['out']] = newNeuron()
+
             neuron = network["neurons"][gene['out']]
             neuron['incoming'].append(gene)
+
             if gene['into'] not in network['neurons']:
                 network["neurons"][gene['into']] = newNeuron()
 
@@ -203,7 +230,7 @@ def generateNetwork(genome):
 
 
 def evaluateNetwork(network, inputs):
-    inputs.append(1)
+    # inputs.append(1)
 
     # if len(inputs) != Inputs:
     #     print("Incorrect number of neural network inputs.")
@@ -217,20 +244,31 @@ def evaluateNetwork(network, inputs):
         for j in range(len(neuron['incoming'])):
             incoming = neuron['incoming'][j]
             other = network['neurons'][incoming['into']]
-            sum = sum + incoming["weight"] * other["value"]
+            sum += (incoming["weight"] * other["value"])
 
         if len(neuron['incoming']) > 0:
             neuron["value"] = sigmoid(sum)
 
-        outputs = {}
-        for o in range(Outputs):
-            button = ButtonNames[o]
-            if network['neurons'][MaxNodes + o]["value"] > 0:
-                outputs[button] = True
-            else:
-                outputs[button] = False
+    outputs = {"Up" : False, "Down": False, "Left":False, "Right":False}
+    most = 0
+    index = 0
+    for o in range(Outputs):
 
-        return outputs
+        neuron_val = network['neurons'][MaxNodes + o]["value"]
+        if most < neuron_val:
+            most = neuron_val
+            index = o
+
+    if most > .5:
+        outputs[ButtonNames[index]] = True
+
+
+    # outputs = {}
+    # for o in range(Outputs):
+    #     button = ButtonNames[o]
+    #     outputs[button] = ((network['neurons'][MaxNodes + o]["value"]) > 0)
+
+    return outputs
 
 
 # look at function below
@@ -249,9 +287,9 @@ def crossover(g1, g2):
 
     for i in range(len(g1['genes'])):
         gene1 = g1['genes'][i]
-        if gene1["innovation"] in innovations2 and random.randint(1, 2) == 1 and \
-                innovations2[gene1["innovation"]]['enabled']:
-            gene2 = innovations2[gene1["innovation"]]['enabled']
+        if (gene1["innovation"] in innovations2 and random.randint(1, 2) == 1
+                and innovations2[gene1["innovation"]]['enabled']):
+            gene2 = innovations2[gene1["innovation"]]
             child['genes'].append(copyGene(gene2))
         else:
             child['genes'].append(copyGene(gene1))
@@ -271,39 +309,40 @@ def randomNeuron(genes, nonInput):
 
     if not nonInput:
         for i in range(Inputs):
-            neurons[
-                i] = True  # Will this work?? Originally its a dictionary I think, idk
+            neurons[i] = True
 
     for o in range(Outputs):
         neurons[MaxNodes + o] = True
 
-    for i in range(len(genes)):
-        if (not nonInput) or genes[i]['into'] > Inputs:
-            neurons[genes[i]['into']] = True
+    for k in range(len(genes)):
+        if (not nonInput) or (genes[k]['into'] > Inputs):
+            neurons[genes[k]['into']] = True
 
-        if (not nonInput) or genes[i]['out'] > Inputs:
-            neurons[genes[i]['out']] = True
+        if (not nonInput) or (genes[k]['out'] > Inputs):
+            neurons[genes[k]['out']] = True
 
     count = 0
 
-    for i in neurons:
+    for _ in neurons:
         count += 1
 
     n = random.randint(1, count)
 
     for i in neurons:
-        n = n - 1
+        n -= 1
         if n == 0:
-            return neurons[i]
-
-        return 0
+            return i
 
 
-def contiansLink(genes, link):
+    return 0
+
+
+def contiansLink(genes, link) -> bool:
     for i in range(len(genes)):
         gene = genes[i]
         if gene['into'] == link['into'] and gene['out'] == link['out']:
             return True
+    return False
 
 
 def pointMutate(genome):
@@ -320,12 +359,16 @@ def linkMutate(genome, forceBias):
     neuron1 = randomNeuron(genome['genes'], False)
     neuron2 = randomNeuron(genome['genes'], True)
 
-    newLink = newGene()
-    if neuron1 <= Inputs and neuron2 <= Inputs:
-        # Both input nodes
-        return
 
-    if neuron2 <= Inputs:
+    while neuron1 < Inputs and neuron2 < Inputs:
+        # Both input nodes
+        neuron1 = randomNeuron(genome['genes'], False)
+        neuron2 = randomNeuron(genome['genes'], True)
+
+    newLink = newGene()
+
+    # if neuron2 < Inputs:
+    if neuron1 > neuron2:
         # Swap output and input
         temp = neuron1
         neuron1 = neuron2
@@ -337,11 +380,17 @@ def linkMutate(genome, forceBias):
     if forceBias:
         newLink['into'] = Inputs
 
+    # print("\n")
+    # print("Link Mutate")
+
     if contiansLink(genome['genes'], newLink):
+        # print("Skipping")
         return
 
+    # print("Not Skipping")
+
     newLink["innovation"] = newInnovation()
-    newLink["weight"] = random.random() * 4 - 2
+    newLink["weight"] = ((random.random() * 4) - 2)
 
     genome['genes'].append(newLink)
 
@@ -350,9 +399,9 @@ def nodeMutate(genome):
     if len(genome['genes']) == 0:
         return
 
-    genome['maxneuron'] = genome['maxneuron'] + 1
+    genome['maxneuron'] += 1
 
-    gene = genome['genes'][random.randint(1, len(genome['genes']))]
+    gene = genome['genes'][random.randint(0, len(genome['genes']) -1 )]
 
     if not gene['enabled']:
         return
@@ -383,11 +432,12 @@ def enableDisableMutate(ge, enable: bool):
     if len(candidate) == 0:
         return
 
-    gene = candidate[random.randint(0, len(candidate))]
+    gene = candidate[random.randint(0, len(candidate)-1)]
     gene['enabled'] = not gene['enabled']
 
 
 def mutate(genome):
+
     for mutation, rate in genome["mutationRates"].items():
         if random.randint(1, 2) == 1:
             genome["mutationRates"][mutation] = .95 * rate
@@ -422,6 +472,7 @@ def mutate(genome):
         p -= 1
 
     p = genome["mutationRates"]["disable"]
+
     while p > 0:
         if random.random() < p:
             enableDisableMutate(genome, False)
@@ -443,21 +494,18 @@ def disjoint(genes1: list, genes2: list):
 
     for i in range(len(genes1)):
         gene = genes1[i]
-        if not i2[gene["innovation"]]:
-            disjointGenes = disjointGenes + 1
+        if gene["innovation"] > len(i2):
+            disjointGenes += 1
 
     for i in range(len(genes2)):
         gene = genes2[i]
-        if not i1[gene["innovation"]]:
-            disjointGenes = disjointGenes + 1
+        if gene["innovation"] >= len(i1):
+            disjointGenes += 1
 
     n = max(len(genes1), len(genes2))
 
-    # This Shouldn't be here
-    if disjointGenes == 0:
-        return 0
-    else:
-        return disjointGenes / n
+
+    return disjointGenes / n
 
 
 def weight(genes1: list, genes2: list):
@@ -486,7 +534,7 @@ def sameSpecies(genome1, genome2):
     dd = DeltaDisjoint * disjoint(genome1['genes'], genome2['genes'])
     dw = DeltaWeights * weight(genome1['genes'], genome2['genes'])
 
-    return dd + dw < DeltaThreshold
+    return (dd + dw) < DeltaThreshold
 
 
 # look at this function
@@ -497,7 +545,7 @@ def rankGlobally():
         for g in range(len(species['genomes'])):
             globe.append(species['genomes'][g])
 
-    globe = sorted(globe, key=lambda d: d['fitness'])  # Okay, wtf is this exactly?
+    globe = sorted(globe, key=lambda d: d['fitness'])
 
     for g in range(len(globe)):
         globe[g]['globalRank'] = g  # Oh, I see
@@ -524,6 +572,7 @@ def totalAverageFitness():
 
 # look at this one too
 def cullSpecies(cutToOne):
+
     for s in range(len(pool['species'])):
         species = pool['species'][s]
 
@@ -540,19 +589,18 @@ def cullSpecies(cutToOne):
         #
         # species['genomes'] = boob
 
-        # Whatever the fuck is going on up there. Have fun debugging :)
+    # Whatever the fuck is going on up there. Have fun debugging :)
 
         remaining = math.ceil(len(species['genomes']) / 2)
 
         if cutToOne:
             remaining = 1
 
-        while remaining < len(species['genomes']):
+        while len(species['genomes']) > remaining:
             species['genomes'].pop()
 
 
 def breedChild(species):
-    child = {}
 
     if random.random() < CrossoverChance:
         g1 = species['genomes'][random.randint(0, len(species['genomes'])-1)]
@@ -582,8 +630,7 @@ def removeStaleSpecies():
         else:
             species['staleness'] += 1
 
-        if species['staleness'] < StaleSpecies or species['topFitness'] >= pool[
-            'maxFitness']:
+        if species['staleness'] < StaleSpecies or species['topFitness'] >= pool['maxFitness']:
             survived.append(species)
 
     pool['species'] = survived
@@ -597,22 +644,22 @@ def removeWeakSpecies():
 
     for s in range(len(pool['species'])):
         species = pool['species'][s]
-        breed = math.floor(species['averageFitness'] / sum * Population)
+        breed = math.ceil((species['averageFitness'] / sum) * Population)
         if breed >= 1:
             survived.append(species)
 
     pool['species'] = survived
 
 
-# species['genomes'] is a list. So do that TODO
 def addToSpecies(child):
     foundSpecies = False
 
     for s in range(len(pool['species'])):
         species = pool['species'][s]
-        if not foundSpecies and sameSpecies(child, species['genomes'][0]):
-            species['genomes'].append(child)
-            foundSpecies = True
+        for g in species['genomes']:
+            if not foundSpecies and sameSpecies(child, g):
+                species['genomes'].append(child)
+                foundSpecies = True
 
     if not foundSpecies:
         childSpecies = newSpecies()
@@ -620,8 +667,6 @@ def addToSpecies(child):
         pool['species'].append(childSpecies)
 
 
-# Todo so the random.randomint is inclusive, you got to subratect for indexes
-# TODO writefile function unclear at the moment
 def newGeneration():
 
     cullSpecies(False)  # Cull the bottom half of the species
@@ -637,92 +682,108 @@ def newGeneration():
 
     sum = totalAverageFitness()
     children = []
+
     for s in range(len(pool['species'])):
         species = pool['species'][s]
+
         # Whats the Order of Operations for this?
-        breed = math.floor(species['averageFitness'] / sum * Population) - 1
+        breed = math.ceil((species['averageFitness'] / sum) * Population)
         for i in range(breed):
             children.append(breedChild(species))
 
     cullSpecies(True)  # Cull all but the top member of the each species
 
-    while len(children) + len(pool['species']) < Population:
-        species = pool['species'][
-            random.randint(0, len(pool['species'])-1)]
+    totalPopulation = 0
+    for s in range(len(pool['species'])):
+        totalPopulation += len(pool['species'][s]['genomes'])
+
+    # while (len(children) + len(pool['species'])) < Population:
+    # while (len(children) + totalPopulation) not in range(math.ceil(Population-(.2*Population)), math.ceil(Population+(.2*Population))) and (len(children) + totalPopulation) < (Population+(.2*Population)):
+    while (len(children) + totalPopulation) <= Population:
+        species = pool['species'][random.randint(0, len(pool['species'])-1)]
         children.append(breedChild(species))
 
-    for c in range(len(children)):
-        child = children[c]
+    for child in children:
         addToSpecies(child)
 
     pool['generation'] += 1
 
-    text = "backup." + str(pool['generation']) + "."
+    # text = "backup." + str(pool['generation']) + "."
 
 def initializePool():
     global pool
     pool = newPool()
     for i in range(Population):
         basic = basicGenome()
-        new_species = newSpecies()
-        new_species['genomes'].append(basic)
-        pool['species'].append(new_species)
+        # new_species = newSpecies()
+        # new_species['genomes'].append(basic)
+        # pool['species'].append(new_species)
         addToSpecies(basic)
     initializeRun()
 
 
 def clearJoypad():
-    controller = {}
+    global controller
+    for b in ButtonNames:
+        controller[str(b)] = False
 
-    for b in range(len(ButtonNames)):
-        controller[str(ButtonNames[b])] = False
+    # board.input_movements(controller)
 
-    board.input_movements(controller)
-
-# TODO this is where to implent your movements. Joypad and what not. I think
-#  mabte do about making a class. I got
 
 def initializeRun():
     # Savestate.load(Filename); <-- Probobly dont need this. Might be a rest method
     # Here the species and genome are local but on speceis is ever used. WTF!?
     board._end()
     pool['currentFrame'] = 0
-    rightmost[0] = 0
+    # rightmost[0] = 0
     timeout[0] = TimeoutConstant
     clearJoypad()
 
     species = pool['species'][pool['currentSpecies']]
     genome = species['genomes'][pool['currentGenome']]
+
     generateNetwork(genome)
-    evaluateCurrent()
+
+    # evaluateCurrent()
 
 
 def evaluateCurrent():
     species = pool['species'][pool['currentSpecies']]
     genome = species['genomes'][pool['currentGenome']]
 
-    global inputs
-    inputs = getInputs()
-    global controller
-    controller = evaluateNetwork(genome['network'], inputs)
 
-    board.input_movements(
-        controller)  # <-- This thing gets called again. Mabye llok at documanetation
+    start = time.process_time()
+    end = time.process_time()
 
+    while not board.is_game_over() and end - start < MAX_TIME:
+        global inputs
+
+        inputs = getInputs()
+        old_score = Score[0]
+
+        global controller
+
+        controller = evaluateNetwork(genome['network'], inputs)
+        board.input_movements(controller)
+        board.update()
+
+        getScore()
+
+        if old_score >= Score[0]:
+            end = time.process_time()
 
 initializePool()
 
 
 def nextGenome():
     pool['currentGenome'] += 1
-    if pool['currentGenome'] >= len(
-            pool['species'][pool['currentSpecies']]['genomes']):
+    if pool['currentGenome'] >= len(pool['species'][pool['currentSpecies']]['genomes']):
         pool['currentGenome'] = 0
         pool['currentSpecies'] += 1
         if pool['currentSpecies'] >= len(pool['species']):
             newGeneration()
             pool['currentSpecies'] = 0
-
+    # initializeRun()
 
 def fitnessAlreadyMeasured():
     species = pool['species'][pool['currentSpecies']]
@@ -766,14 +827,14 @@ def playTop():
 #
 #     file.close()
 
-def random_pad():
-    cont = {}
-
-    for b in range(len(ButtonNames)):
-        cont[str(ButtonNames[b])] = False
-    cont[(random.choice(ButtonNames))] = True
-
-    board.input_movements(cont)
+# def random_pad():
+#     cont = {}
+#
+#     for b in range(len(ButtonNames)):
+#         cont[str(ButtonNames[b])] = False
+#     cont[(random.choice(ButtonNames))] = True
+#
+#     board.input_movements(cont)
 
 
 board.update()
@@ -788,52 +849,65 @@ while True:
 
     evaluateCurrent()
 
-    old_score = Score[0]
-    board.input_movements(controller)
+    # old_score = Score[0]
+    #
+    # getScore()
+    # new_score = Score[0]
 
-    getScore()
+    # if old_score < new_score:
+    #     # rightmost[0] = new_score
+    #     timeout[0] = TimeoutConstant
+    # timeout[0] = (timeout[0] - 1)
+
+    # timeoutBonus = pool['currentFrame'] / 4
+
+    timeoutBonus = 0
     new_score = Score[0]
-    if old_score < new_score:
-        rightmost[0] = new_score
-        timeout[0] = TimeoutConstant
-    timeout[0] = (timeout[0] - 1)
 
-    timeoutBonus = pool['currentFrame'] / 4
-
-    if timeout[0] + timeoutBonus <= 0:
+    # if timeout[0] + timeoutBonus <= 0:
+    if True:
         # print(new_score)
         fitness = new_score
 
-        if fitness == 0:
+        if fitness <= 2:
             fitness = -1
         genome['fitness'] = fitness
 
         if fitness > pool['maxFitness']:
             pool['maxFitness'] = fitness
 
-        pool['currentSpecies'] = 0
-        pool['currentGenome'] = 0
-        while fitnessAlreadyMeasured():
-            nextGenome()
-        initializeRun()
+        # pool['currentSpecies'] = 0
+        # pool['currentGenome'] = 0
+
+        #while fitnessAlreadyMeasured():
+
+    print("\n")
+    print("Current Generation: " + str(pool['generation']))
+    print("Current Species: " + str(pool['currentSpecies'] + 1) + ", Out of "+ str(len(pool['species'])))
+    print("Current Genome: " + str(pool['currentGenome'] + 1 ) + ", Out of: " + str(len(species['genomes'])))
+    print("Neuron Size: " + str(len(species['genomes'][pool['currentGenome']]['genes'])))
+    print("Current Score: "+ str(Score[0]))
+    print("Top Score: " + str(pool['maxFitness']))
+
+    nextGenome()
+
+    initializeRun()
+
 
     measured = 0
     total = 0
 
-    for species in pool['species']:
-        for genome in species['genomes']:
-            total += 1
-            if genome['fitness'] != 0:
-                measured = measured + 1
+    # for species in pool['species']:
+    #     for genome in species['genomes']:
+    #         total += 1
+    #         if genome['fitness'] != 0:
+    #             measured += 1
 
     # time.sleep(1)
     # board.update_idletasks()
     pool['currentFrame'] += 1
-    board.update()
 
     # print(pool['currentSpecies'])
     # print(pool['currentGenome'])
-    print("\n")
-    print(pool['currentSpecies'])
-    print(len(pool['species']))
-    print(Score[0])
+
+

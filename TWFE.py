@@ -187,8 +187,11 @@ class TFE(tk.Tk):
 
     def _end(self):
         self._update_display("Game Over")
-        self.game_status = False
-        # self._reset()
+        self._Game_Over = True
+        self._reset()
+
+    def is_game_over(self):
+        return self._Game_Over
 
     def new_btn(self):
         pos = (random.randint(0, 3), random.randint(0, 3))
@@ -203,6 +206,7 @@ class TFE(tk.Tk):
             self._update_display(self.score())
 
     def _reset(self):
+        self._Game_Over = False
         for row in range(4):
             for col in range(4):
                 pos = (row, col)
@@ -437,7 +441,6 @@ class TFE(tk.Tk):
 
         return False
 
-    # Ya come back to this
     def input_movements(self, joypad: dict):
         for i in joypad:
             if joypad[i]:
@@ -451,7 +454,6 @@ class TFE(tk.Tk):
                     self.left("Left")
         # print(joypad)
 
-        # for move in joypad
 
     def input_movements_list(self, i):
         if i == "Up":
