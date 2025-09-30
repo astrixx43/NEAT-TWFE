@@ -116,6 +116,7 @@ class TWFENoUI:
         self.movesMade = 0
         self.DIM = DIM
         self._board = []
+        self._Game_Over = False
         for i in range(DIM):
             self._board.append([])
             for j in range(DIM):
@@ -123,6 +124,9 @@ class TWFENoUI:
         self.new_btn()
 
     def _end(self):
+        self.end()
+
+    def end(self):
         self._Game_Over = True
         # self._reset()
 
@@ -142,7 +146,7 @@ class TWFENoUI:
             return True
         return False
 
-    def _reset(self):
+    def reset(self):
         self._Game_Over = False
         self.mergeCount = 0
         self.movesMade = 0
@@ -249,7 +253,7 @@ class TWFENoUI:
         for i in range(self.DIM):
             if i == 0:
                 for row in range(self.DIM):
-                    for col in range(self.DIM - 1 , -1, -1):
+                    for col in range(self.DIM - 1, -1, -1):
                         pos = (row, col)
                         adj_pos = (pos[0] - 1, col)
                         while pos[0] > -1:
@@ -302,18 +306,18 @@ class TWFENoUI:
     def _post_collison(self):
         pass
 
-    def is_valid_position(self, pos: tuple[int,int]):
+    def is_valid_position(self, pos: tuple[int, int]):
         return 0 <= pos[0] < self.DIM and 0 <= pos[1] < self.DIM
 
-    def pos_to_value(self, pos: tuple[int,int]):
+    def pos_to_value(self, pos: tuple[int, int]):
         if self.is_valid_position(pos):
             return self._board[pos[0]][pos[1]]
         return -1
 
-    def is_position_empty(self, pos: tuple[int,int]) -> bool:
+    def is_position_empty(self, pos: tuple[int, int]) -> bool:
         return self.is_valid_position(pos) and self._board[pos[0]][pos[1]] == 0
 
-    def _set_pos_value(self, pos: tuple[int,int], value: int):
+    def _set_pos_value(self, pos: tuple[int, int], value: int):
         if self.is_valid_position(pos):
             self._board[pos[0]][pos[1]] = value
 
@@ -437,7 +441,7 @@ class TWFENoUI:
         for row in range(self.DIM):
             string += "\n ["
             for col in range(self.DIM):
-                string += str(self.pos_to_value((row, col)))+ ", "
+                string += str(self.pos_to_value((row, col))) + ", "
 
             string += "]"
         string += " \n"

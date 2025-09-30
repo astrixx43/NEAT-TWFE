@@ -5,12 +5,10 @@ from viz import drawGenomeGraph
 import math
 import time
 
-
 timeout = [.200]
 MAX_TIME = 5
 board = get_board()
 controller = {}
-
 
 ButtonNames = [
     "Up",
@@ -57,7 +55,6 @@ def getScore():
     Score[2] = board.getNumMoves()
 
 
-
 def getTiles(x, y):
     num = board.tiles[x, y]['text'].strip()
     if num.isnumeric():
@@ -65,7 +62,7 @@ def getTiles(x, y):
         return math.log2(int(num)) / 16
         # return int(num)
     else:
-        return 0
+        return -1
 
 
 # Take a look at this too
@@ -83,9 +80,8 @@ def getInputs():
 
 def sigmoid(x) -> float:
     # return 1 / (1 + math.exp(-x))
-    #return 2 / (1 + math.exp(-3 * x)) -1
+    # return 2 / (1 + math.exp(-3 * x)) -1
     return 1 / (1 + math.exp(-5.9 * x))
-
 
 
 def newInnovation():
@@ -100,7 +96,6 @@ def newPool():
     pool["innovation"] = Outputs
     pool['currentSpecies'] = 0
     pool['currentGenome'] = 0
-    pool['currentFrame'] = 0
     pool["maxFitness"] = 0
     pool['topScore'] = 0
 
@@ -147,7 +142,8 @@ def copyGenome(genome):
     genome2['fitness'] = 0
 
     genome2['maxneuron'] = genome['maxneuron']
-    genome2["mutationRates"]["connections"] = genome["mutationRates"]["connections"]
+    genome2["mutationRates"]["connections"] = \
+        genome["mutationRates"]["connections"]
     genome2["mutationRates"]["link"] = genome["mutationRates"]["link"]
     genome2["mutationRates"]["bias"] = genome["mutationRates"]["bias"]
     genome2["mutationRates"]["node"] = genome["mutationRates"]["node"]
@@ -171,7 +167,6 @@ def basicGenome():
     #     genome['genes'].append(newLink)
 
     mutate(genome)
-
 
     # May Want to comment
 
@@ -258,7 +253,7 @@ def evaluateNetwork(network, inputs):
         if len(neuron['incoming']) > 0:
             neuron["value"] = sigmoid(sum)
 
-    outputs = {"Up" : False, "Down": False, "Left":False, "Right":False}
+    outputs = {"Up": False, "Down": False, "Left": False, "Right": False}
     most = 0
     index = 0
     totalSum = 0
@@ -271,8 +266,8 @@ def evaluateNetwork(network, inputs):
 
     probs = []
     for o in range(Outputs):
-        val = ((network['neurons'][MaxNodes + o]["value"]/totalSum), o)
-        for i in range(math.floor((val[0]/totalSum) * 100)):
+        val = ((network['neurons'][MaxNodes + o]["value"] / totalSum), o)
+        for i in range(math.floor((val[0] / totalSum) * 100)):
             probs.append(val)
 
     choice = random.choice(probs)
@@ -285,7 +280,6 @@ def evaluateNetwork(network, inputs):
     # threshold = .7
     # if most > threshold:
     #     outputs[ButtonNames[index]] = True
-
 
     # outputs = {}
     # for o in range(Outputs):
@@ -322,7 +316,7 @@ def crossover(g1, g2):
 
     for mutation, rate in g1['mutationRates'].items():
         child['mutationRates'][
-            mutation] = rate  # Need to look at genome 'mutationRates' defnations. Seems like its a tuple??
+            mutation] = rate
 
     return child
 
@@ -357,11 +351,10 @@ def randomNeuron(genes, nonInput):
         if n == 0:
             return i
 
-
     return 0
 
 
-def contiansLink(genes, link) -> bool:
+def containsLink(genes, link) -> bool:
     for i in range(len(genes)):
         gene = genes[i]
         if gene['into'] == link['into'] and gene['out'] == link['out']:
@@ -381,7 +374,6 @@ def pointMutate(genome):
 def linkMutate(genome, forceBias):
     neuron1 = randomNeuron(genome['genes'], False)
     neuron2 = randomNeuron(genome['genes'], True)
-
 
     while neuron1 < Inputs and neuron2 < Inputs:
         # Both input nodes
@@ -406,7 +398,7 @@ def linkMutate(genome, forceBias):
     # print("\n")
     # print("Link Mutate")
 
-    if contiansLink(genome['genes'], newLink):
+    if containsLink(genome['genes'], newLink):
         # print("Skipping")
         return
 
@@ -424,7 +416,7 @@ def nodeMutate(genome):
 
     genome['maxneuron'] += 1
 
-    gene = genome['genes'][random.randint(0, len(genome['genes']) -1 )]
+    gene = genome['genes'][random.randint(0, len(genome['genes']) - 1)]
 
     if not gene['enabled']:
         return
@@ -455,12 +447,11 @@ def enableDisableMutate(ge, enable: bool):
     if len(candidate) == 0:
         return
 
-    gene = candidate[random.randint(0, len(candidate)-1)]
+    gene = candidate[random.randint(0, len(candidate) - 1)]
     gene['enabled'] = not gene['enabled']
 
 
 def mutate(genome):
-
     progress = genome['fitness'] / max(1, pool['maxFitness'])
     adjustment = 0.9 + (0.2 * progress)
     for mutation, rate in genome["mutationRates"].items():
@@ -506,7 +497,6 @@ def mutate(genome):
 
 
 def disjoint(genes1: list, genes2: list):
-
     # innovations1 = {g["innovation"] for g in genes1}
     # innovations2 = {g["innovation"] for g in genes2}
     #
@@ -553,8 +543,6 @@ def disjoint(genes1: list, genes2: list):
 
     disjoint_genes = len(innov1 - innov2) + len(innov2 - innov1)
     return disjoint_genes / max(len(genes1), len(genes2))
-
-
 
 
 def weight(genes1: list, genes2: list):
@@ -622,11 +610,11 @@ def totalAverageFitness():
 
 # look at this one too
 def cullSpecies(cutToOne):
-
     for s in range(len(pool['species'])):
         species = pool['species'][s]
 
-        species['genomes'] = sorted(species['genomes'], key=lambda d: d['fitness'], reverse=True)
+        species['genomes'] = sorted(species['genomes'],
+                                    key=lambda d: d['fitness'], reverse=True)
 
         # temp = []
         # for i in range(len(species['genomes'])):
@@ -639,7 +627,7 @@ def cullSpecies(cutToOne):
         #
         # species['genomes'] = boob
 
-    # Whatever the fuck is going on up there. Have fun debugging :)
+        # Whatever the fuck is going on up there. Have fun debugging :)
 
         remaining = math.ceil(len(species['genomes']) / 2)
 
@@ -651,13 +639,12 @@ def cullSpecies(cutToOne):
 
 
 def breedChild(species):
-
     if random.random() < CrossoverChance:
-        g1 = species['genomes'][random.randint(0, len(species['genomes'])-1)]
-        g2 = species['genomes'][random.randint(0, len(species['genomes'])-1)]
+        g1 = species['genomes'][random.randint(0, len(species['genomes']) - 1)]
+        g2 = species['genomes'][random.randint(0, len(species['genomes']) - 1)]
         child = crossover(g1, g2)
     else:
-        g = species['genomes'][random.randint(0, len(species['genomes'])-1)]
+        g = species['genomes'][random.randint(0, len(species['genomes']) - 1)]
         child = copyGenome(g)
 
     mutate(child)
@@ -671,8 +658,8 @@ def removeStaleSpecies():
     for s in range(len(pool['species'])):
         species = pool['species'][s]
 
-
-        species['genomes'] = sorted(species['genomes'], key=lambda d: d['fitness'], reverse=True)
+        species['genomes'] = sorted(species['genomes'],
+                                    key=lambda d: d['fitness'], reverse=True)
 
         if species['genomes'][0]['fitness'] > species['topFitness']:
             species['topFitness'] = species['genomes'][0]['fitness']
@@ -680,14 +667,14 @@ def removeStaleSpecies():
         else:
             species['staleness'] += 1
 
-        if species['staleness'] < StaleSpecies or species['topFitness'] >= pool['maxFitness']:
+        if (species['staleness'] < StaleSpecies or
+                species['topFitness'] >= pool['maxFitness']):
             survived.append(species)
 
     pool['species'] = survived
 
 
 def removeWeakSpecies():
-
     survived = []
 
     sum = totalAverageFitness()
@@ -700,19 +687,24 @@ def removeWeakSpecies():
         if breed >= 1:
             survived.append(species)
 
-
-
     pool['species'] = survived
 
-    # pool['species'] = sorted(pool['species'], key=lambda d: d['averageFitness'], reverse=True)
-    # pool['species'] = pool['species'][ 0 : math.ceil((len(pool['species'])-1)/2)]
+    # pool['species'] = sorted(pool['species'],
+    # key=lambda d: d['averageFitness'], reverse=True)
 
-    # pool['species'] = pool['species'][ 0 : random.randint(math.ceil((len(pool['species'])-1)/2), (len(pool['species'])-1) )]
+    # pool['species'] = pool['species'][ 0 : math.ceil(
+    # (len(pool['species'])-1)/2)]
+
+    # pool['species'] = pool['species'][ 0 : random.randint(
+    # math.ceil((len(pool['species'])-1)/2), (len(pool['species'])-1) )]
 
 
 def startExtinctionEvent():
-    pool['species'] = sorted(pool['species'], key=lambda d: d['averageFitness'], reverse=True)
-    pool['species'] = pool['species'][ 0 : random.randint(math.ceil((len(pool['species'])-1)/10), math.ceil(7*(len(pool['species'])-1)/10))]
+    pool['species'] = sorted(pool['species'],
+                             key=lambda d: d['averageFitness'], reverse=True)
+    pool['species'] = pool['species'][0: random.randint(math.ceil(
+        (len(pool['species']) - 1) / 10),
+        math.ceil(7 * (len(pool['species']) - 1) / 10))]
 
 
 def addToSpecies(child):
@@ -732,7 +724,6 @@ def addToSpecies(child):
 
 
 def newGeneration():
-
     cullSpecies(False)  # Cull the bottom half of the species
     rankGlobally()
     removeStaleSpecies()
@@ -757,13 +748,10 @@ def newGeneration():
         for i in range(breed):
             children.append(breedChild(species))
 
-
     cullSpecies(True)  # Cull all but the top member of the each species
 
-
     while (len(children) + len(pool['species'])) < Population:
-
-        species = pool['species'][random.randint(0, len(pool['species'])-1)]
+        species = pool['species'][random.randint(0, len(pool['species']) - 1)]
 
         children.append(breedChild(species))
 
@@ -782,6 +770,7 @@ def newGeneration():
     #     DeltaThreshold *= 1.8
 
     # text = "backup." + str(pool['generation']) + "."
+
 
 def initializePool():
     global pool
@@ -804,11 +793,9 @@ def clearJoypad():
 
 
 def initializeRun():
-    # Savestate.load(Filename); <-- Probobly dont need this. Might be a rest method
-    # board._end()
+    # TODO Implement saving method
+
     board._reset()
-    pool['currentFrame'] = 0
-    # rightmost[0] = 0
     timeout[0] = TimeoutConstant
     clearJoypad()
 
@@ -823,7 +810,6 @@ def initializeRun():
 def evaluateCurrent():
     species = pool['species'][pool['currentSpecies']]
     genome = species['genomes'][pool['currentGenome']]
-
 
     start = time.process_time()
     end = time.process_time()
@@ -851,7 +837,8 @@ def evaluateCurrent():
 
 def nextGenome():
     pool['currentGenome'] += 1
-    if pool['currentGenome'] >= len(pool['species'][pool['currentSpecies']]['genomes']):
+    if pool['currentGenome'] >= len(pool['species'][
+                                        pool['currentSpecies']]['genomes']):
         pool['currentGenome'] = 0
         pool['currentSpecies'] += 1
         if pool['currentSpecies'] >= len(pool['species']):
@@ -868,12 +855,11 @@ def fitnessAlreadyMeasured():
 
 
 def playTop():
-
     maxfitness = 0
     maxs = 0
     maxg = 0
 
-    for s,species in pool['species']:
+    for s, species in pool['species']:
         for g, genome in species['genomes']:
             if genome['fitness'] > maxfitness:
                 maxfitness = genome['fitness']
@@ -882,36 +868,6 @@ def playTop():
     pool['currentSpecies'] = maxs
     pool['currentGenome'] = maxg
     pool['maxFitness'] = maxfitness
-    pool['currentFrame'] += 1
-
-#  Come back to these ones. Some data type misunderstandings
-# def writeFile(filename):
-#     file = open(filename, "w")
-#     file.write(str(pool['generation']) + "\n")
-#     file.write(str(pool['maxFitness']) + "\n")
-#     file.write(str(pool['species']) + "\n")
-#
-#     for n in pool['species']:
-#         file.write(str(n['topFitness']) + "\n")
-#         file.write(str(n['staleness']) + "\n")
-#         file.write(str(n['genomes']) + "\n")
-#         species = n
-#         for m in species['genomes']:
-#             file.write(str(m['fitness']) + "\n")
-#             file.write(str(m['maxneuron']) + "\n")
-#
-#     file.close()
-
-# def random_pad():
-#     cont = {}
-#
-#     for b in range(len(ButtonNames)):
-#         cont[str(ButtonNames[b])] = False
-#     cont[(random.choice(ButtonNames))] = True
-#
-#     board.input_movements(cont)
-
-
 
 
 # random_pad()
@@ -929,31 +885,37 @@ def calculateFitness() -> float:
         1024: 12800,
         2048: 50000
     }
-    if numMoves == 0: numMoves = 1
-    fitness = ((new_score * numMerge)/numMoves) + (largest_tile*2)
+
+    if numMoves == 0:
+        numMoves = 1
+
+    fitness = ((new_score * numMerge) / numMoves) + (largest_tile * 2)
     for tile, bonus in tile_bonus.items():
         if largest_tile >= tile:
             fitness += bonus
     if not MadeAllMoves:
-        fitness -= (new_score/3)
+        fitness -= (new_score / 3)
     tiles = getInputs()
     empty = 0
     for num in tiles:
         if num == 0:
             empty += 1
 
-    fitness -= (empty*5)
+    fitness -= (empty * 5)
     # return new_score + numMerge * 25 + (board.getLargestTile()*1.8)
     return fitness
 
 
 initializePool()
 board.update()
+
 while True:
 
     species = pool['species'][pool['currentSpecies']]
     genome = species['genomes'][pool['currentGenome']]
+
     # plt = drawGenomeGraph(species['genomes'][pool['currentGenome']])
+
     evaluateCurrent()
 
     # old_score = Score[0]
@@ -965,8 +927,6 @@ while True:
     #     # rightmost[0] = new_score
     #     timeout[0] = TimeoutConstant
     # timeout[0] = (timeout[0] - 1)
-
-    # timeoutBonus = pool['currentFrame'] / 4
 
     timeoutBonus = 0
     new_score = Score[0]
@@ -988,14 +948,18 @@ while True:
         # pool['currentSpecies'] = 0
         # pool['currentGenome'] = 0
 
-        #while fitnessAlreadyMeasured():
+        # while fitnessAlreadyMeasured():
 
     print("\n")
     print("Current Generation: " + str(pool['generation']))
-    print("Current Species: " + str(pool['currentSpecies'] + 1) + ", Out of "+ str(len(pool['species'])))
-    print("Current Genome: " + str(pool['currentGenome'] + 1 ) + ", Out of: " + str(len(species['genomes'])))
-    print("Neuron Size: " + str(len(species['genomes'][pool['currentGenome']]['genes'])))
-    print("Current Score: "+ str(new_score))
+    print("Current Species: " + str(
+        pool['currentSpecies'] + 1) + ", Out of " + str(len(pool['species'])))
+    print("Current Genome: " + str(
+        pool['currentGenome'] + 1) + ", Out of: " + str(
+        len(species['genomes'])))
+    print("Neuron Size: " + str(
+        len(species['genomes'][pool['currentGenome']]['genes'])))
+    print("Current Score: " + str(new_score))
     print("Current Fitness: " + str(fitness))
     print("Top Score: " + str(pool['topScore']))
     print("Max Fitness: " + str(pool['maxFitness']))
@@ -1003,7 +967,6 @@ while True:
     nextGenome()
 
     initializeRun()
-
 
     measured = 0
     total = 0
@@ -1018,9 +981,6 @@ while True:
 
     # time.sleep(1)
     # board.update_idletasks()
-    pool['currentFrame'] += 1
 
     # print(pool['currentSpecies'])
     # print(pool['currentGenome'])
-
-

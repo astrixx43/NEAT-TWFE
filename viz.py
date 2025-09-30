@@ -2,6 +2,7 @@ import random
 
 import networkx as nx
 import matplotlib.pyplot as plt
+
 def drawGenomeGraph(genome):
     G = nx.Graph()
     nodes = []
@@ -53,11 +54,12 @@ def drawGenomeGraph(genome):
         pos[i] = (0, i*150)
 
     for o in range(0, 4):
-        pos[1000000 + o] = (1000, (o* 300) + (16*150)/4)
+        pos[1000000 + o] = (1000, (o * 300) + (16*150)/4)
 
     for n in nodes:
         if n not in pos:
-            pos[n] = (random.randint(1, 1000) + random.random(), 150*random.randint(0,16) + random.random())
+            pos[n] = (random.randint(1, 1000) + random.random(),
+                      150*random.randint(0, 16) + random.random())
 
             # x = 0
             # y = 0
