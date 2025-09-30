@@ -1,6 +1,6 @@
 import random
-
-from TWFE import get_board
+import threading
+from TWFENoUI import TWFENoUI
 from viz import drawGenomeGraph
 import math
 import time
@@ -8,7 +8,10 @@ import time
 
 timeout = [.200]
 MAX_TIME = 5
-board = get_board()
+BOARD_SIZE = 10
+Boards = []
+Threads = []
+THREADMAX = 10
 controller = {}
 
 
@@ -47,34 +50,36 @@ TimeoutConstant = 20
 
 MaxNodes = 1000000
 
-Score = [0, 0, 0]
+Scores = []
 MadeAllMoves = [False]
 
-
-def getScore():
-    Score[0] = board.score()
-    Score[1] = board.getMergeCount()
-    Score[2] = board.getNumMoves()
-
-
-
-def getTiles(x, y):
-    num = board.tiles[x, y]['text'].strip()
-    if num.isnumeric():
-        # Normalize inputs
-        return math.log2(int(num)) / 16
-        # return int(num)
-    else:
-        return 0
+def initilazeBoards(numberOfBoards:int):
+    for i in range(numberOfBoards):
+        Boards.append(TWFENoUI())
+        Scores.append([0, 0, 0])
+        MadeAllMoves.append(False)
 
 
-# Take a look at this too
-def getInputs():
-    getScore()
+def getScore(index:int):
+    Scores[index][0] = Boards[index].score()
+    Scores[index][1] = Boards[index].getMergeCount()
+    Scores[index][2] = Boards[index].getNumMoves()
+
+
+def getTiles(x:int, y:int, index:int) -> float:
+    num = Boards[index].pos_to_value((x,y))
+
+    # Normalize inputs
+    return math.log2(num) / 16
+    # return int(num)
+
+
+def getInputs(index:int):
+    getScore(index)
     inps = []
     for dy in range(4):
         for dx in range(4):
-            inps.append(getTiles(dx, dy))
+            inps.append(getTiles(dx, dy, index))
 
     inps.append(1.0)
 
@@ -85,7 +90,6 @@ def sigmoid(x) -> float:
     # return 1 / (1 + math.exp(-x))
     #return 2 / (1 + math.exp(-3 * x)) -1
     return 1 / (1 + math.exp(-5.9 * x))
-
 
 
 def newInnovation():
@@ -555,8 +559,6 @@ def disjoint(genes1: list, genes2: list):
     return disjoint_genes / max(len(genes1), len(genes2))
 
 
-
-
 def weight(genes1: list, genes2: list):
     i2 = {}
 
@@ -783,6 +785,7 @@ def newGeneration():
 
     # text = "backup." + str(pool['generation']) + "."
 
+
 def initializePool():
     global pool
     pool = newPool()
@@ -792,7 +795,7 @@ def initializePool():
         # new_species = newSpecies()
         # new_species['genomes'].append(basic)
         # pool['species'].append(new_species)
-    initializeRun()
+    initializeRun(pool['currentSpecies'], pool['currentSpecies'])
 
 
 def clearJoypad():
@@ -803,71 +806,85 @@ def clearJoypad():
     # board.input_movements(controller)
 
 
-def initializeRun():
+def initializeRun(currentSpecies, currentGenome):
     # Savestate.load(Filename); <-- Probobly dont need this. Might be a rest method
+    # Here the species and genome are local but on speceis is ever used. WTF!?
     # board._end()
-    board._reset()
-    pool['currentFrame'] = 0
+
+    # pool['currentFrame'] = 0
+
     # rightmost[0] = 0
     timeout[0] = TimeoutConstant
     clearJoypad()
 
-    species = pool['species'][pool['currentSpecies']]
-    genome = species['genomes'][pool['currentGenome']]
+    species = pool['species'][pool[currentSpecies]]
+    genome = species['genomes'][pool[currentGenome]]
 
     generateNetwork(genome)
 
     # evaluateCurrent()
 
 
-def evaluateCurrent():
-    species = pool['species'][pool['currentSpecies']]
-    genome = species['genomes'][pool['currentGenome']]
+def evaluateCurrent(currentSpecies, currentGenome, index):
+    species = pool['species'][currentSpecies]
+    genome = species['genomes'][currentGenome]
 
 
     start = time.process_time()
     end = time.process_time()
     MadeAllMoves[0] = False
-    while not board.is_game_over() and end - start < MAX_TIME:
+    while not Boards[index].is_game_over() and end - start < MAX_TIME:
         global inputs
 
-        inputs = getInputs()
-        old_score = Score[0]
+        inputs = getInputs(index)
+        old_score = Scores[index][0]
 
         global controller
 
         controller = evaluateNetwork(genome['network'], inputs)
-        board.input_movements(controller)
-        board.update()
+        Boards[index].input_movements(controller)
+        Boards[index].update()
 
-        getScore()
+        getScore(index)
 
-        if old_score >= Score[0]:
+        if old_score >= Scores[index][0]:
             end = time.process_time()
 
-    MadeAllMoves[0] = board.is_game_over()
-    board._end()
+    MadeAllMoves[index][0] = Boards[index].is_game_over()
+    Boards[index]._end()
 
+    timeoutBonus = 0
+    new_score = Scores[index][0]
+    fitness = calculateFitness(0)
 
-def nextGenome():
-    pool['currentGenome'] += 1
-    if pool['currentGenome'] >= len(pool['species'][pool['currentSpecies']]['genomes']):
-        pool['currentGenome'] = 0
-        pool['currentSpecies'] += 1
-        if pool['currentSpecies'] >= len(pool['species']):
+    if fitness <= 4:
+        fitness = -1
+
+    genome['fitness'] = fitness
+
+    pool['maxFitness'] = max(pool['maxFitness'], fitness)
+
+    pool['topScore'] = max(new_score, pool['topScore'])
+
+def nextGenome(currentGenome, currentSpecies):
+    pool[currentGenome] += 1
+    if pool[currentGenome] >= len(pool['species'][pool[currentSpecies]]['genomes']):
+        pool[currentGenome] = 0
+        pool[currentSpecies] += 1
+        if pool[currentSpecies] >= len(pool['species']):
             newGeneration()
-            pool['currentSpecies'] = 0
+            pool[currentSpecies] = 0
     # initializeRun()
 
 
-def fitnessAlreadyMeasured():
-    species = pool['species'][pool['currentSpecies']]
-    genome = species['genomes'][pool['currentGenome']]
+def fitnessAlreadyMeasured(currentSpecies, currentGenome):
+    species = pool['species'][pool[currentSpecies]]
+    genome = species['genomes'][pool[currentGenome]]
 
     return genome['fitness'] != 0
 
 
-def playTop():
+def playTop(currentSpecies, currentGenome):
 
     maxfitness = 0
     maxs = 0
@@ -879,8 +896,8 @@ def playTop():
                 maxfitness = genome['fitness']
                 maxs = s
                 maxg = g
-    pool['currentSpecies'] = maxs
-    pool['currentGenome'] = maxg
+    pool[currentSpecies] = maxs
+    pool[currentGenome] = maxg
     pool['maxFitness'] = maxfitness
     pool['currentFrame'] += 1
 
@@ -915,12 +932,12 @@ def playTop():
 
 
 # random_pad()
-def calculateFitness() -> float:
-    getScore()
-    new_score = Score[0]
-    numMerge = Score[1]
-    numMoves = Score[2]
-    largest_tile = board.getLargestTile()
+def calculateFitness(index:int) -> float:
+    getScore(index)
+    new_score = Scores[index][0]
+    numMerge = Scores[index][1]
+    numMoves = Scores[index][2]
+    largest_tile = Boards[index].getLargestTile()
     tile_bonus = {
         64: 50,
         128: 280,
@@ -929,15 +946,21 @@ def calculateFitness() -> float:
         1024: 12800,
         2048: 50000
     }
+
     if numMoves == 0: numMoves = 1
+
     fitness = ((new_score * numMerge)/numMoves) + (largest_tile*2)
+
     for tile, bonus in tile_bonus.items():
         if largest_tile >= tile:
             fitness += bonus
+
     if not MadeAllMoves:
         fitness -= (new_score/3)
-    tiles = getInputs()
+
+    tiles = getInputs(index)
     empty = 0
+
     for num in tiles:
         if num == 0:
             empty += 1
@@ -946,15 +969,14 @@ def calculateFitness() -> float:
     # return new_score + numMerge * 25 + (board.getLargestTile()*1.8)
     return fitness
 
+def evaluateSpecies(species, board:TWFENoUI, index:int, currentGenome:int, currentSpecies:int):
+    global pool
 
-initializePool()
-board.update()
-while True:
+    genome = species['genomes'][currentGenome]
 
-    species = pool['species'][pool['currentSpecies']]
-    genome = species['genomes'][pool['currentGenome']]
     # plt = drawGenomeGraph(species['genomes'][pool['currentGenome']])
-    evaluateCurrent()
+
+    evaluateCurrent(currentGenome, currentSpecies, index)
 
     # old_score = Score[0]
     #
@@ -969,12 +991,12 @@ while True:
     # timeoutBonus = pool['currentFrame'] / 4
 
     timeoutBonus = 0
-    new_score = Score[0]
+    new_score = Scores[index][0]
 
     # if timeout[0] + timeoutBonus <= 0:
     if True:
         # print(new_score)
-        fitness = calculateFitness()
+        fitness = calculateFitness(index)
 
         if fitness <= 4:
             fitness = -1
@@ -999,10 +1021,26 @@ while True:
     print("Current Fitness: " + str(fitness))
     print("Top Score: " + str(pool['topScore']))
     print("Max Fitness: " + str(pool['maxFitness']))
+    nextGenome(pool['currentGenome'], pool['currentSpecies'])
+    board._reset()
+    initializeRun(pool['currentGenome'], pool['currentSpecies'])
 
-    nextGenome()
+initializePool()
+initilazeBoards(BOARD_SIZE)
+# board.update()
+while True:
+    # t = 0
+    # while t < THREADMAX:
+    currentSpecies = pool['species'][pool['currentSpecies']]
+    currentGenome = species['genomes'][pool['currentGenome']]
 
-    initializeRun()
+    t1 = threading.Thread(target=evaluateCurrent, args=(currentSpecies,currentGenome,0,))
+    # print(new_score)
+
+
+
+    # board._reset()
+
 
 
     measured = 0
@@ -1018,7 +1056,7 @@ while True:
 
     # time.sleep(1)
     # board.update_idletasks()
-    pool['currentFrame'] += 1
+
 
     # print(pool['currentSpecies'])
     # print(pool['currentGenome'])
