@@ -2,16 +2,12 @@ import random
 import threading
 from TWFENoUI import TWFENoUI
 from viz import drawGenomeGraph
+from viz import drawProgressGraph
+from viz import updateProgressGraph
+from viz import drawAverageFitnessGraph
+from viz import updateAverageFitnessGraph
 import math
 import time
-
-timeout = [.200]
-MAX_TIME = 5
-BOARD_SIZE = 30
-Boards = []
-THREADS = []
-THREADMAX = 30
-controller = {}
 
 ButtonNames = [
     "Up",
@@ -26,7 +22,7 @@ InputSize = 16
 Inputs = InputSize + 1
 Outputs = len(ButtonNames)
 
-Population = 600
+Population = 100
 DeltaDisjoint = 1.8
 DeltaWeights = 0.6
 DeltaThreshold = 1.0
@@ -44,19 +40,33 @@ StepSize = 0.1
 DisableMutationChance = 0.2
 EnableMutationChance = 0.3
 
-TimeoutConstant = 20
+ConfidenceThreshold = 0.48
+MaxTimeBetweenEachMove = 15
 
 MaxNodes = 1000000
 
 Scores = []
-MadeAllMoves = [False]
+
+Generations = []
+DrawProgressGraph = True
+TopScoresOfGeneration = []
+BestTopScores = []
+DrawAverageFitness = True
+AverageFitness = []
+DrawGenomeNeuralNetwork = False
+
+BOARD_SIZE = 100
+Boards = []
+THREADS = []
+THREADMAX = 100
+THREADS_INUSE = [0]
+SUBTHREADS = 5
 
 
 def initializeBoards(numberOfBoards: int):
     for i in range(numberOfBoards):
         Boards.append(TWFENoUI())
         Scores.append([0, 0, 0])
-        MadeAllMoves.append(False)
         THREADS.append(0)
 
 
@@ -91,9 +101,9 @@ def getInputs(index: int):
 
 
 def sigmoid(x) -> float:
-    # return 1 / (1 + math.exp(-x))
+    return 1 / (1 + math.exp(-x))
     # return 2 / (1 + math.exp(-3 * x)) -1
-    return 1 / (1 + math.exp(-5.9 * x))
+    # return 1 / (1 + math.exp(-5.9 * x))
 
 
 def newInnovation():
@@ -267,24 +277,37 @@ def evaluateNetwork(network, inputs):
             neuron["value"] = sigmoid(sum)
 
     outputs = {"Up": False, "Down": False, "Left": False, "Right": False}
-    most = 0
-    index = 0
+    most = [(0, -1)]
     totalSum = 0
     for o in range(Outputs):
         neuron_val = network['neurons'][MaxNodes + o]["value"]
         totalSum += neuron_val
-        if most < neuron_val:
-            most = neuron_val
-            index = o
+        if 0.05 < neuron_val - most[0][0]:
+            most = [(neuron_val, o)]
+        elif -0.05 < (neuron_val - most[0][0]) < 0.05:
+            most.append((neuron_val, o))
 
-    probs = []
-    for o in range(Outputs):
-        val = ((network['neurons'][MaxNodes + o]["value"] / totalSum), o)
-        for i in range(math.floor((val[0] / totalSum) * 100)):
-            probs.append(val)
+    # probs = []
+    # for o in range(Outputs):
+    #     val = ((network['neurons'][MaxNodes + o]["value"] / totalSum), o)
+    #     for i in range(math.floor((val[0] / totalSum) * 100)):
+    #         probs.append(val)
+    #
+    # choice = random.choice(probs)
+    # outputs[ButtonNames[choice[1]]] = True
 
-    choice = random.choice(probs)
-    outputs[ButtonNames[choice[1]]] = True
+    move_confidence = most[0][0]
+    most_confident_move = most[0][1]
+
+    if move_confidence < ConfidenceThreshold:
+        return outputs
+
+    if len(most) > 2:
+        choice = random.choice(most)
+        move_confidence = choice[0]
+        most_confident_move = choice[1]
+
+    outputs[ButtonNames[most_confident_move]] = True
 
     #
     #
@@ -737,6 +760,18 @@ def addToSpecies(child):
 
 
 def newGeneration():
+    global TopScoresOfGeneration
+    Generations.append(pool['generation'])
+    if DrawProgressGraph:
+        BestTopScores.append(max(TopScoresOfGeneration))
+        updateProgressGraph(Generations, BestTopScores, Population)
+
+    AverageFitness.append(totalAverageFitness() / len(pool['species']))
+    if DrawAverageFitness:
+        updateAverageFitnessGraph(Generations, AverageFitness, Population)
+
+    TopScoresOfGeneration = []
+
     cullSpecies(False)  # Cull the bottom half of the species
     rankGlobally()
     removeStaleSpecies()
@@ -797,23 +832,9 @@ def initializePool():
     # initializeRun(pool['currentSpecies'], pool['currentSpecies'])
 
 
-def clearJoypad():
-    global controller
-    for b in ButtonNames:
-        controller[str(b)] = False
-
-    # board.input_movements(controller)
-
-
 def initializeRun(currentSpecies, currentGenome):
     # Savestate.load(Filename);
     # <-- Probobly dont need this. Might be a rest method
-
-    # pool['currentFrame'] = 0
-
-    # rightmost[0] = 0
-    timeout[0] = TimeoutConstant
-    clearJoypad()
 
     species = pool['species'][currentSpecies]
     genome = species['genomes'][currentGenome]
@@ -829,15 +850,13 @@ def evaluateCurrent(currentSpecies, currentGenome, index):
 
     start = time.process_time()
     end = time.process_time()
-    MadeAllMoves[index] = False
 
-    while not Boards[index].is_game_over() and end - start < MAX_TIME:
+    while (not Boards[index].is_game_over() and end - start <
+           MaxTimeBetweenEachMove):
         global inputs
 
         inputs = getInputs(index)
         old_score = Scores[index][0]
-
-        global controller
 
         controller = evaluateNetwork(genome['network'], inputs)
         Boards[index].input_movements(controller)
@@ -847,11 +866,8 @@ def evaluateCurrent(currentSpecies, currentGenome, index):
         if old_score >= Scores[index][0]:
             end = time.process_time()
 
-    MadeAllMoves[index] = Boards[index].is_game_over()
-
     Boards[index].end()
 
-    timeoutBonus = 0
     new_score = Scores[index][0]
 
     fitness = calculateFitness(index)
@@ -931,6 +947,8 @@ def calculateFitness(index: int) -> float:
     new_score = Scores[index][0]
     numMerge = Scores[index][1]
     numMoves = Scores[index][2]
+    TopScoresOfGeneration.append(new_score)
+
     largest_tile = Boards[index].getLargestTile()
     tile_bonus = {
         64: 50,
@@ -942,25 +960,28 @@ def calculateFitness(index: int) -> float:
     }
 
     if numMoves == 0:
-        numMoves = 1
+        return -16
 
-    fitness = ((new_score * numMerge) / numMoves) + (largest_tile * 2)
+    fitness = new_score ** 1.2 + (largest_tile * numMerge / numMoves)
 
+    # fitness = new_score ** 1.2 + ((largest_tile**1.2) * numMerge / numMoves)
     for tile, bonus in tile_bonus.items():
         if largest_tile >= tile:
             fitness += bonus
+    # fitness = new_score ** 2 + numMerge
 
-    if not MadeAllMoves[index]:
-        fitness -= (new_score / 3)
+    # if not MadeAllMoves[index]:
+    #     fitness -= (new_score / 3)
 
     tiles = getInputs(index)
     empty = 0
 
     for num in tiles:
-        if num == 0:
+        if num == -1:
             empty += 1
 
-    fitness -= (empty * 5)
+    fitness -= (empty * 3)
+
     # return new_score + numMerge * 25 + (Board[index].getLargestTile()*1.8)
     return fitness
 
@@ -972,7 +993,8 @@ def evaluateSpecies(currentSpecies: int, currentGenome: int,
     species = pool['species'][currentSpecies]
     genome = species['genomes'][currentGenome]
 
-    # plt = drawGenomeGraph(species['genomes'][pool['currentGenome']])
+    if DrawGenomeNeuralNetwork:
+        plt = drawGenomeGraph(species['genomes'][pool['currentGenome']])
 
     evaluateCurrent(currentSpecies, currentGenome, index)
 
@@ -981,17 +1003,7 @@ def evaluateSpecies(currentSpecies: int, currentGenome: int,
     # getScore()
     # new_score = Score[0]
 
-    # if old_score < new_score:
-    #     # rightmost[0] = new_score
-    #     timeout[0] = TimeoutConstant
-    # timeout[0] = (timeout[0] - 1)
-
-    # timeoutBonus = pool['currentFrame'] / 4
-
-    timeoutBonus = 0
     new_score = Scores[index][0]
-
-    # if timeout[0] + timeoutBonus <= 0:
 
     if True:
         # print(new_score)
@@ -1038,17 +1050,23 @@ def evaluateSpecies(currentSpecies: int, currentGenome: int,
 initializePool()
 initializeBoards(BOARD_SIZE)
 
+if DrawProgressGraph:
+    drawProgressGraph([], [], Population)
+
+if DrawAverageFitness:
+    drawAverageFitnessGraph([], [], Population)
+
 
 def joinThreads():
     for indexOfThread in range(len(Boards)):
         if THREADS[indexOfThread].is_alive():
             THREADS[indexOfThread].join()
+            THREADS_INUSE[0] -= 1
 
 
 while True:
     # t = 0
     # while t < THREADMAX:
-
 
     currentSpecies = 0
     currentGenome = 0
@@ -1058,20 +1076,20 @@ while True:
 
         while (indexOfThread < len(Boards)
                and currentSpecies < len(pool['species'])):
-
             THREADS[indexOfThread] = (threading.Thread(target=evaluateSpecies,
-                                  args=(currentSpecies, 0, indexOfThread,)))
+                                                       args=(currentSpecies, 0,
+                                                             indexOfThread,)))
 
             THREADS[indexOfThread].start()
             indexOfThread += 1
 
             currentSpecies += 1
 
+            THREADS_INUSE[0] += 1
 
         joinThreads()
 
     joinThreads()
-
 
     newGeneration()
 

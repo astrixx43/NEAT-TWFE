@@ -19,11 +19,13 @@ def random_pad():
 
     for b in range(len(ButtonNames)):
         controller[str(ButtonNames[b])] = False
+
     controller[(random.choice(ButtonNames))] = True
 
     board.input_movements(controller)
 
     board.update()
+
 while True:
     random_pad()
     time.sleep(1)

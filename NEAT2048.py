@@ -2,6 +2,8 @@ import random
 
 from TWFE import get_board
 from viz import drawGenomeGraph
+from viz import drawProgressGraph
+from viz import updateProgressGraph
 import math
 import time
 
@@ -48,6 +50,13 @@ MaxNodes = 1000000
 Score = [0, 0, 0]
 MadeAllMoves = [False]
 
+Generations = []
+
+BestTopScores = []
+DrawProgressGraph = True
+TopScoresOfGeneration = []
+
+DrawAverageFitness = True
 
 def getScore():
     Score[0] = board.score()
@@ -724,10 +733,18 @@ def addToSpecies(child):
 
 
 def newGeneration():
+    global TopScoresOfGeneration
+    if DrawProgressGraph:
+        Generations.append(pool['generation'])
+        BestTopScores.append(max(TopScoresOfGeneration))
+        updateProgressGraph(Generations, BestTopScores)
+
+    TopScoresOfGeneration = []
     cullSpecies(False)  # Cull the bottom half of the species
     rankGlobally()
     removeStaleSpecies()
     rankGlobally()
+
 
     for s in range(len(pool['species'])):
         species = pool['species'][s]
@@ -876,6 +893,8 @@ def calculateFitness() -> float:
     new_score = Score[0]
     numMerge = Score[1]
     numMoves = Score[2]
+    TopScoresOfGeneration.append(new_score)
+
     largest_tile = board.getLargestTile()
     tile_bonus = {
         64: 50,
@@ -909,12 +928,15 @@ def calculateFitness() -> float:
 initializePool()
 board.update()
 
+if DrawAverageFitness:
+    drawProgressGraph([0], [0])
+
 while True:
 
     species = pool['species'][pool['currentSpecies']]
     genome = species['genomes'][pool['currentGenome']]
-
     # plt = drawGenomeGraph(species['genomes'][pool['currentGenome']])
+
 
     evaluateCurrent()
 

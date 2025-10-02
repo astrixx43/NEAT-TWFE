@@ -134,16 +134,14 @@ class TWFENoUI:
         return self._Game_Over
 
     def new_btn(self) -> bool:
-        pos = (random.randint(0, 3), random.randint(0, 3))
-        i = 0
-        while self.is_occupied(pos) and i != 500:
+        pos = (random.randint(0, self.DIM - 1), random.randint(0, self.DIM - 1))
+
+        while self.is_occupied(pos):
             row, col = random.randint(0, 3), random.randint(0, 3)
             pos = (row, col)
-            i += 1
 
-        if i < 500:
-            self._set_pos_value(pos, random.choice([2, 4]))
-            return True
+        self._set_pos_value(pos, random.choice([2, 4]))
+        return True
         return False
 
     def reset(self):
@@ -157,32 +155,22 @@ class TWFENoUI:
         self.new_btn()
         # leaderboard_text(self.score())
 
-    def down(self):
+    def up(self):
         """Handle a player's move."""
         if self.game_over():
-            initial_moves_made = self.movesMade
 
-            for i in range(self.DIM):
-                self._down_button()
-
-            if initial_moves_made < self.movesMade:
-                self.new_btn()
+            self._up_button()
 
             if not self.game_over():
                 self._end()
-
         else:
             self._end()
 
-    def right(self):
+    def down(self):
+        """Handle a player's move."""
         if self.game_over():
-            initial_moves_made = self.movesMade
 
-            for i in range(self.DIM):
-                self._right_button()
-
-            if initial_moves_made < self.movesMade:
-                self.new_btn()
+            self._down_button()
 
             if not self.game_over():
                 self._end()
@@ -192,32 +180,22 @@ class TWFENoUI:
 
     def left(self):
         if self.game_over():
-            initial_moves_made = self.movesMade
 
-            for i in range(self.DIM):
-                self._left_button()
-
-            if initial_moves_made < self.movesMade:
-                self.new_btn()
+            self._left_button()
 
             if not self.game_over():
                 self._end()
         else:
             self._end()
 
-    def up(self):
-        """Handle a player's move."""
+    def right(self):
         if self.game_over():
-            initial_moves_made = self.movesMade
 
-            for i in range(self.DIM):
-                self._up_button()
-
-            if initial_moves_made < self.movesMade:
-                self.new_btn()
+            self._right_button()
 
             if not self.game_over():
                 self._end()
+
         else:
             self._end()
 
@@ -250,61 +228,66 @@ class TWFENoUI:
         return largest
 
     def _up_button(self):
+        a = 0
         for i in range(self.DIM):
-            if i == 0:
-                for row in range(self.DIM):
-                    for col in range(self.DIM - 1, -1, -1):
-                        pos = (row, col)
+            for row in range(self.DIM):
+                for col in range(self.DIM - 1, -1, -1):
+
+                    pos = (row, col)
+                    adj_pos = (pos[0] - 1, col)
+
+                    while pos[0] > -1:
+                        a += self.collision(pos, adj_pos)
+                        pos = (pos[0] - 1, col)
                         adj_pos = (pos[0] - 1, col)
-                        while pos[0] > -1:
-                            self.collision(pos, adj_pos)
-                            pos = (pos[0] - 1, col)
-                            adj_pos = (pos[0] - 1, col)
-        self._post_collison()
+
+        self._post_collision(a)
 
     def _down_button(self):
+        a = 0
         for i in range(self.DIM):
-            if i == 0:
-                for row in range(self.DIM - 1, -1, -1):
-                    for col in range(self.DIM - 1, -1, -1):
-                        pos = (row, col)
+            for row in range(self.DIM - 1, -1, -1):
+                for col in range(self.DIM - 1, -1, -1):
+                    pos = (row, col)
+                    adj_pos = (pos[0] + 1, col)
+                    while pos[0] < 4:
+                        a += self.collision(pos, adj_pos)
+                        pos = (pos[0] + 1, col)
                         adj_pos = (pos[0] + 1, col)
-                        while pos[0] < 4:
-                            self.collision(pos, adj_pos)
-                            pos = (pos[0] + 1, col)
-                            adj_pos = (pos[0] + 1, col)
-        self._post_collison()
+
+        self._post_collision(a)
 
     def _right_button(self):
+        a = 0
         for i in range(self.DIM):
-            if i == 0:
-                for col in range(self.DIM - 1, -1, -1):
-                    for row in range(self.DIM - 1, -1, -1):
+            for col in range(self.DIM - 1, -1, -1):
+                for row in range(self.DIM - 1, -1, -1):
+                    pos = (row, col)
+                    adj_pos = (pos[0], col + 1)
+                    while pos[1] < 4:
+                        a += self.collision(pos, adj_pos)
+                        pos = (row, pos[1] + 1)
+                        adj_pos = (row, pos[1] + 1)
 
-                        pos = (row, col)
-                        adj_pos = (pos[0], col + 1)
-                        while pos[1] < 4:
-                            self.collision(pos, adj_pos)
-                            pos = (row, pos[1] + 1)
-                            adj_pos = (row, pos[1] + 1)
-
-        self._post_collison()
+        self._post_collision(a)
 
     def _left_button(self):
+        a = 0
         for i in range(self.DIM):
-            if i == 0:
-                for col in range(self.DIM):
-                    for row in range(self.DIM - 1, -1, -1):
-                        pos = (row, col)
-                        adj_pos = (row, col - 1)
-                        while pos[1] > -1:
-                            self.collision(pos, adj_pos)
-                            pos = (row, pos[1] - 1)
-                            adj_pos = (row, pos[1] - 1)
-        self._post_collison()
+            for col in range(self.DIM):
+                for row in range(self.DIM - 1, -1, -1):
+                    pos = (row, col)
+                    adj_pos = (row, col - 1)
+                    while pos[1] > -1:
+                        a += self.collision(pos, adj_pos)
+                        pos = (row, pos[1] - 1)
+                        adj_pos = (row, pos[1] - 1)
+        self._post_collision(a)
 
-    def _post_collison(self):
-        pass
+    def _post_collision(self, a):
+        if a > 0:
+            self.movesMade += 1
+            self.new_btn()
 
     def is_valid_position(self, pos: tuple[int, int]):
         return 0 <= pos[0] < self.DIM and 0 <= pos[1] < self.DIM
@@ -321,20 +304,24 @@ class TWFENoUI:
         if self.is_valid_position(pos):
             self._board[pos[0]][pos[1]] = value
 
-    def collision(self, btn_pos_1, btn_pos_2):
+    def collision(self, btn_pos_1, btn_pos_2) -> int:
+        """
+        Process collision between 2 blocks. Return 0 if nothing changed, return
+        1 if status of the board has changed.
+        """
 
         num1 = self.pos_to_value(btn_pos_1)
         num2 = self.pos_to_value(btn_pos_2)
 
-        if num1 > -1 and num2 > -1 and (num1 == num2 or num1 == 0 or num2 == 0):
+        if num1 > -1 and num2 > -1 and (
+                ((num1 == num2) and (num1 != 0)) or
+                ((num2 == 0) and num1 != 0)):
 
             if num1 == num2 and num1 != 0:
                 self.mergeCount += 1
 
             self._set_pos_value(btn_pos_1, 0)
             self._set_pos_value(btn_pos_2, num1 + num2)
-            # if not (num1 == 0 and num2 == 0) or (num1 != 0 and num2 == 0):
-            self.movesMade += 1
 
             return 1
 
@@ -368,7 +355,6 @@ class TWFENoUI:
             new_pos = (pos[0], pos[1] + 1)
 
             return not self.is_position_empty(new_pos)
-
 
         return not self.is_position_empty(pos)
 

@@ -1,5 +1,6 @@
 import random
 
+import matplotlib
 import networkx as nx
 import matplotlib.pyplot as plt
 
@@ -113,3 +114,34 @@ def drawGenomeGraph(genome):
     plt.axis("off")
     plt.show()
     return plt
+
+def drawProgressGraph(x_data, y_data, population=''):
+    # Initial plot
+    plt.figure(2)
+    plt.title(f'Top Score over Generation (Population = {population})')
+    plt.plot(x_data, y_data, '.-', color='r')
+    plt.xlabel("Generation")
+    plt.ylabel("Top Score")
+    plt.show(block=False)
+    return plt
+
+def updateProgressGraph(x_data, y_data, population=''):
+    plt.close(2)
+    drawProgressGraph(x_data, y_data, population)
+
+def drawAverageFitnessGraph(x_data, y_data, population=''):
+    # Initial plot
+    plt.figure(3)
+    plt.title(f'Average Fitness over Generation (Population = {population})')
+    plt.plot(x_data, y_data, '.-', color='b')
+    plt.xlabel("Generation")
+    plt.ylabel("Average Fitness")
+    plt.show(block=False)
+    return plt
+
+def updateAverageFitnessGraph(x_data, y_data, population=''):
+    # Initial plot
+    plt.figure(3)
+    drawAverageFitnessGraph(x_data, y_data, population)
+
+

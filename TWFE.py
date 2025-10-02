@@ -219,13 +219,33 @@ class TFE(tk.Tk):
         self.new_btn()
         # leaderboard_text(self.score())
 
+    def up(self, event):
+        """Handle a player's move."""
+        if self.game_over():
+
+            self._up_button()
+
+            if not self.game_over():
+                self._end()
+        else:
+            self._end()
+
     def down(self, event):
         """Handle a player's move."""
         if self.game_over():
 
-            for i in range(4):
-                self._down_button()
-            self.new_btn()
+            self._down_button()
+
+            if not self.game_over():
+                self._end()
+        else:
+            self._end()
+
+    def left(self, event):
+        if self.game_over():
+
+            self._left_button()
+
             if not self.game_over():
                 self._end()
         else:
@@ -234,30 +254,8 @@ class TFE(tk.Tk):
     def right(self, event):
         if self.game_over():
 
-            for i in range(4):
-                self._right_button()
-            self.new_btn()
-            if not self.game_over():
-                self._end()
-        else:
-            self._end()
+            self._right_button()
 
-    def left(self, event):
-        if self.game_over():
-            for i in range(4):
-                self._left_button()
-            self.new_btn()
-            if not self.game_over():
-                self._end()
-        else:
-            self._end()
-
-    def up(self, event):
-        """Handle a player's move."""
-        if self.game_over():
-            for i in range(4):
-                self._up_button()
-            self.new_btn()
             if not self.game_over():
                 self._end()
         else:
@@ -291,69 +289,69 @@ class TFE(tk.Tk):
 
         return largest
 
-    def pos_to_btn(self, pos: tuple[int,int]):
+    def pos_to_btn(self, pos: tuple[int, int]):
         return self.tiles[pos]
 
     def _up_button(self):
+        a = 0
         for i in range(4):
-            if i == 0:
-                for row in range(4):
-                    for col in range(3, -1, -1):
-                        a = 0
-                        pos = (row, col)
+            for row in range(4):
+                for col in range(3, -1, -1):
+                    pos = (row, col)
+                    adj_pos = (pos[0] - 1, col)
+                    while pos[0] > -1:
+                        a += self.collision(pos, adj_pos)
+                        pos = (pos[0] - 1, col)
                         adj_pos = (pos[0] - 1, col)
-                        while pos[0] > -1:
-                            self.collision(pos, adj_pos, a)
-                            pos = (pos[0] - 1, col)
-                            adj_pos = (pos[0] - 1, col)
-        self._post_collison()
+
+        self._post_collison(a)
 
     def _down_button(self):
+        a = 0
         for i in range(4):
-            if i == 0:
-                for row in range(3, -1, -1):
-                    for col in range(3, -1, -1):
-                        a = 0
-                        b = 0
-                        pos = (row, col)
+            for row in range(3, -1, -1):
+                for col in range(3, -1, -1):
+                    pos = (row, col)
+                    adj_pos = (pos[0] + 1, col)
+                    while pos[0] < 4:
+                        a += self.collision(pos, adj_pos)
+                        pos = (pos[0] + 1, col)
                         adj_pos = (pos[0] + 1, col)
-                        while pos[0] < 4 and a == 0 and b == 0:
-                            self.collision(pos, adj_pos, a)
-                            pos = (pos[0] + 1, col)
-                            adj_pos = (pos[0] + 1, col)
-        self._post_collison()
+
+        self._post_collison(a)
 
     def _right_button(self):
+        a = 0
         for i in range(4):
-            if i == 0:
-                for col in range(3, -1, -1):
-                    for row in range(3, -1, -1):
-                        b = 0
-                        a = 0
-                        pos = (row, col)
-                        adj_pos = (pos[0], col + 1)
-                        while pos[1] < 4 and a == 0 and b == 0:
-                            self.collision(pos, adj_pos, a)
-                            pos = (row, pos[1] + 1)
-                            adj_pos = (row, pos[1] + 1)
-        self._post_collison()
+            for col in range(3, -1, -1):
+                for row in range(3, -1, -1):
+                    pos = (row, col)
+                    adj_pos = (pos[0], col + 1)
+                    while pos[1] < 4:
+                        a += self.collision(pos, adj_pos)
+                        pos = (row, pos[1] + 1)
+                        adj_pos = (row, pos[1] + 1)
+        self._post_collison(a)
 
     def _left_button(self):
+        a = 0
         for i in range(4):
-            if i == 0:
-                for col in range(4):
-                    for row in range(3, -1, -1):
-                        a = 0
-                        b = 0
-                        pos = (row, col)
-                        adj_pos = (row, col - 1)
-                        while pos[1] > -1 and a == 0 and b == 0:
-                            self.collision(pos, adj_pos, a)
-                            pos = (row, pos[1] - 1)
-                            adj_pos = (row, pos[1] - 1)
-        self._post_collison()
+            for col in range(4):
+                for row in range(3, -1, -1):
+                    pos = (row, col)
+                    adj_pos = (row, col - 1)
+                    while pos[1] > -1:
+                        a += self.collision(pos, adj_pos)
+                        pos = (row, pos[1] - 1)
+                        adj_pos = (row, pos[1] - 1)
 
-    def _post_collison(self):
+        self._post_collison(a)
+
+    def _post_collison(self, a):
+        if a > 0:
+            self.movesMade += 1
+            self.new_btn()
+
         for row in range(4):
             for col in range(4):
                 btn = self.pos_to_btn((row, col))
@@ -361,26 +359,31 @@ class TFE(tk.Tk):
                     btn["text"] = ""
                     btn.config(fg="black")
 
-    def collision(self, btn_1, btn_2, a):
+    def collision(self, btn_1, btn_2):
         btn_1 = self.pos_to_btn(btn_1)
         if -1 < btn_2[0] < 4 and -1 < btn_2[1] < 4:
             btn_2 = self.pos_to_btn(btn_2)
+
             em = [" ", ""]
-            if btn_2['text'] not in em and btn_1['text'] not in em and btn_1[
-                'text'] == btn_2['text'] and btn_2["fg"] != "red" and btn_1[
-                "fg"] != "red":
+
+            if (btn_2['text'] not in em and btn_1['text'] not in em and
+                    btn_1['text'] == btn_2['text']):
+
                 num1 = int(btn_1['text'])
                 num2 = int(btn_2['text'])
                 btn_1.config(text=" ")
                 btn_2.config(text=str(num1 + num2))
                 self.mergeCount += 1
-                btn_2.config(fg="red")
+
                 return 1
-            elif btn_2['text'] == "" and btn_1['text'] not in em:
+
+            elif btn_2['text'] in em and btn_1['text'] not in em:
                 num1 = int(btn_1['text'])
                 btn_1.config(text="")
                 btn_2.config(text=str(num1))
                 btn_2.config(fg="black")
+                return 1
+
             elif btn_2['text'] == "" and btn_1['text'] == " ":
                 btn_1.config(text="")
                 btn_2.config(text=" ")
@@ -389,6 +392,7 @@ class TFE(tk.Tk):
             else:
                 btn_2.config(fg="black")
                 btn_1.config(fg="black")
+
         elif btn_1['fg'] != "black":
             btn_1['fg'] = "black"
 
@@ -428,7 +432,6 @@ class TFE(tk.Tk):
 
     def getMergeCount(self):
         return self.mergeCount
-
 
     def getNumMoves(self):
         return self.movesMade
@@ -547,9 +550,9 @@ def get_board():
     return board
 
 # if __name__ == "__main__":
-#     main()
+#     # main()
 
-
+#
 #
 #
 # board = get_board()
