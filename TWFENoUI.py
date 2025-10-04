@@ -122,6 +122,7 @@ class TWFENoUI:
             for j in range(DIM):
                 self._board[i].append(0)
         self.new_btn()
+        self.new_btn()
 
     def _end(self):
         self.end()
@@ -152,6 +153,7 @@ class TWFENoUI:
             for col in range(4):
                 self._set_pos_value((row, col), 0)
 
+        self.new_btn()
         self.new_btn()
         # leaderboard_text(self.score())
 

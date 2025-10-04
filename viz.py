@@ -4,7 +4,7 @@ import matplotlib
 import networkx as nx
 import matplotlib.pyplot as plt
 
-def drawGenomeGraph(genome):
+def drawGenomeGraph(genome, currentSpecies, currentGenome, Generation):
     G = nx.Graph()
     nodes = []
     connectionsOut = {}
@@ -112,7 +112,9 @@ def drawGenomeGraph(genome):
     ax = plt.gca()
     ax.margins(0.20)
     plt.axis("off")
-    plt.show()
+    plt.title(f'Species={currentSpecies}, '
+              f'Genome={currentGenome}, Generation={Generation}')
+    plt.show(block=False)
     return plt
 
 def drawProgressGraph(x_data, y_data, population=''):
@@ -141,7 +143,23 @@ def drawAverageFitnessGraph(x_data, y_data, population=''):
 
 def updateAverageFitnessGraph(x_data, y_data, population=''):
     # Initial plot
-    plt.figure(3)
+    plt.close(3)
     drawAverageFitnessGraph(x_data, y_data, population)
+
+
+def drawLargestTileGraph(x_data, y_data, population=''):
+    # Initial plot
+    plt.figure(4)
+    plt.title(f'Largest Tile over Generation (Population = {population})')
+    plt.bar(x_data, y_data, .5, color='y')
+    plt.xlabel("Generation")
+    plt.ylabel("Average Fitness")
+    plt.show(block=False)
+    return plt
+
+def updateLargestTileGraph(x_data, y_data, population=''):
+    # Initial plot
+    plt.close(4)
+    drawLargestTileGraph(x_data, y_data, population)
 
 

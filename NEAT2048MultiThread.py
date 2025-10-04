@@ -1,11 +1,14 @@
 import random
 import threading
+
 from TWFENoUI import TWFENoUI
 from viz import drawGenomeGraph
 from viz import drawProgressGraph
 from viz import updateProgressGraph
 from viz import drawAverageFitnessGraph
 from viz import updateAverageFitnessGraph
+import viz
+from DeadThread import DeadThread
 import math
 import time
 
@@ -16,32 +19,41 @@ ButtonNames = [
     "Right"
 ]
 
-BoxRadius = 3
-InputSize = 16
+BoardSize = 4
+InputSize = BoardSize**2
 
-Inputs = InputSize + 1
+Inputs = InputSize + 1      # +1 for the bias
 Outputs = len(ButtonNames)
 
-Population = 100
-DeltaDisjoint = 1.8
-DeltaWeights = 0.6
-DeltaThreshold = 1.0
+Population = 1000
+DeltaDisjoint = 2.0
+DeltaWeights = 0.4
+
+DeltaThreshold = 2.7
+MinDeltaThreshold = 0.1
+MaxDeltaThreshold = 7.0
+DeltaThresholdAdjustmentStep = 0.05
+TargetSpeciesCount = 100
 # DeltaThreshold = 2.7
 
-StaleSpecies = 5
+StaleSpecies = 15
 
-MutateConnectionsChance = .25
+MutateConnectionsChance = 0.25
 PerturbChance = .9
+
+
+
+
 CrossoverChance = 0.75
 LinkMutationChance = 6.7
-NodeMutationChance = 0.50
+NodeMutationChance = 1.50
 BiasMutationChance = 0.40
 StepSize = 0.1
 DisableMutationChance = 0.2
 EnableMutationChance = 0.3
 
-ConfidenceThreshold = 0.48
-MaxTimeBetweenEachMove = 15
+ConfidenceThreshold = 0.5
+MaxTimeBetweenEachMove = 5
 
 MaxNodes = 1000000
 
@@ -53,31 +65,43 @@ TopScoresOfGeneration = []
 BestTopScores = []
 DrawAverageFitness = True
 AverageFitness = []
+FitnessOfGeneration = []
 DrawGenomeNeuralNetwork = False
+DrawLargestTileGraph = True
+LargestTilesOverGenerations = []
+LargestTileOfGeneration = []
 
-BOARD_SIZE = 100
 Boards = []
 THREADS = []
 THREADMAX = 100
-THREADS_INUSE = [0]
-SUBTHREADS = 5
+
+NumParentThreads = 20
+NumChildThreads = 10
 
 
-def initializeBoards(numberOfBoards: int):
-    for i in range(numberOfBoards):
-        Boards.append(TWFENoUI())
-        Scores.append([0, 0, 0])
-        THREADS.append(0)
+def initializeBoards():
+    for i in range(NumParentThreads):
+        Boards.append([])
+        THREADS.append(DeadThread())
+        THREADS.append([])
+        Scores.append([])
+        for j in range(NumChildThreads):
+            Boards[i].append(TWFENoUI())
+            Scores[i].append([0, 0, 0])
+            THREADS[(i * 2) + 1].append(DeadThread())
 
 
-def getScore(index: int):
-    Scores[index][0] = Boards[index].score()
-    Scores[index][1] = Boards[index].getMergeCount()
-    Scores[index][2] = Boards[index].getNumMoves()
+def getScore(indexOfBoard: tuple[int, int]):
+    scoreArray = Scores[indexOfBoard[0]][indexOfBoard[1]]
+    board = Boards[indexOfBoard[0]][indexOfBoard[1]]
+
+    scoreArray[0] = board.score()
+    scoreArray[1] = board.getMergeCount()
+    scoreArray[2] = board.getNumMoves()
 
 
-def getTiles(x: int, y: int, index: int) -> float:
-    num = Boards[index].pos_to_value((x, y))
+def getTiles(x: int, y: int, indexOfBoard: tuple[int, int]) -> float:
+    num = Boards[indexOfBoard[0]][indexOfBoard[1]].pos_to_value((x, y))
 
     # Normalize inputs
     if num == 0:
@@ -88,12 +112,11 @@ def getTiles(x: int, y: int, index: int) -> float:
     # return int(num)
 
 
-def getInputs(index: int):
-    getScore(index)
+def getInputs(indexOfBoard: tuple[int, int]):
     inps = []
-    for dy in range(4):
-        for dx in range(4):
-            inps.append(getTiles(dx, dy, index))
+    for dy in range(BoardSize):
+        for dx in range(BoardSize):
+            inps.append(getTiles(dx, dy, indexOfBoard))
 
     inps.append(1.0)
 
@@ -116,8 +139,6 @@ def newPool():
     pool['species'] = list()
     pool["generation"] = 0
     pool["innovation"] = Outputs
-    pool['currentSpecies'] = 0
-    pool['currentGenome'] = 0
     pool['currentFrame'] = 0
     pool["maxFitness"] = 0
     pool['topScore'] = 0
@@ -181,21 +202,15 @@ def basicGenome():
     innovation = 1
     genome['maxneuron'] = Inputs
 
-    # for o in range(Outputs):
-    #     newLink = newGene()
-    #     newLink['into'] = random.randint(0, Inputs - 1)
-    #     newLink['out'] = MaxNodes + o
-    #     newLink["weight"] = random.uniform(-2, 2)
-    #     newLink["innovation"] = newInnovation()
-    #     genome['genes'].append(newLink)
+    for o in range(Outputs):
+        newLink = newGene()
+        newLink['into'] = random.randint(0, Inputs - 1)
+        newLink['out'] = MaxNodes + o
+        newLink["weight"] = random.uniform(-2, 2)
+        newLink["innovation"] = newInnovation()
+        genome['genes'].append(newLink)
 
     mutate(genome)
-
-    # May Want to comment
-
-    # linkMutate(genome, False)
-    # linkMutate(genome, True)
-    # linkMutate(genome, False)
 
     return genome
 
@@ -243,6 +258,7 @@ def generateNetwork(genome):
 
     for k in range(len(genome["genes"])):
         gene = genome['genes'][k]
+
         if gene['enabled']:
             if gene['out'] not in network['neurons']:
                 network['neurons'][gene['out']] = newNeuron()
@@ -267,25 +283,25 @@ def evaluateNetwork(network, inputs):
         network['neurons'][i]["value"] = inputs[i]
 
     for _, neuron in network['neurons'].items():
-        sum = 0
+        val = 0
         for j in range(len(neuron['incoming'])):
             incoming = neuron['incoming'][j]
             other = network['neurons'][incoming['into']]
-            sum += (incoming["weight"] * other["value"])
+            val += (incoming["weight"] * other["value"])
 
         if len(neuron['incoming']) > 0:
-            neuron["value"] = sigmoid(sum)
+            neuron["value"] = sigmoid(val)
 
     outputs = {"Up": False, "Down": False, "Left": False, "Right": False}
-    most = [(0, -1)]
-    totalSum = 0
-    for o in range(Outputs):
-        neuron_val = network['neurons'][MaxNodes + o]["value"]
-        totalSum += neuron_val
-        if 0.05 < neuron_val - most[0][0]:
-            most = [(neuron_val, o)]
-        elif -0.05 < (neuron_val - most[0][0]) < 0.05:
-            most.append((neuron_val, o))
+    # most = [(0, -1)]
+    # totalSum = 0
+    # for o in range(Outputs):
+    #     neuron_val = network['neurons'][MaxNodes + o]["value"]
+    #     totalSum += neuron_val
+    #     if 0.05 < neuron_val - most[0][0]:
+    #         most = [(neuron_val, o)]
+    #     elif -0.05 < (neuron_val - most[0][0]) < 0.05:
+    #         most.append((neuron_val, o))
 
     # probs = []
     # for o in range(Outputs):
@@ -296,31 +312,27 @@ def evaluateNetwork(network, inputs):
     # choice = random.choice(probs)
     # outputs[ButtonNames[choice[1]]] = True
 
-    move_confidence = most[0][0]
-    most_confident_move = most[0][1]
+    # move_confidence = most[0][0]
+    # most_confident_move = most[0][1]
+    #
+    move_confidence = 0
+    move_index = 0
+    for o in range(Outputs):
+        neuron_val = network['neurons'][MaxNodes + o]["value"]
+
+        if move_confidence < neuron_val:
+            move_confidence = neuron_val
+            move_index = o
 
     if move_confidence < ConfidenceThreshold:
         return outputs
-
-    if len(most) > 2:
-        choice = random.choice(most)
-        move_confidence = choice[0]
-        most_confident_move = choice[1]
-
-    outputs[ButtonNames[most_confident_move]] = True
-
     #
+    # if len(most) > 2:
+    #     choice = random.choice(most)
+    #     move_confidence = choice[0]
+    #     most_confident_move = choice[1]
     #
-    # selected = random.choice(ButtonNames, w)
-    #
-    # threshold = .7
-    # if most > threshold:
-    #     outputs[ButtonNames[index]] = True
-
-    # outputs = {}
-    # for o in range(Outputs):
-    #     button = ButtonNames[o]
-    #     outputs[button] = ((network['neurons'][MaxNodes + o]["value"]) > 0)
+    outputs[ButtonNames[move_index]] = True
 
     return outputs
 
@@ -341,18 +353,17 @@ def crossover(g1, g2):
 
     for i in range(len(g1['genes'])):
         gene1 = g1['genes'][i]
+
         if (gene1["innovation"] in innovations2 and random.randint(1, 2) == 1
                 and innovations2[gene1["innovation"]]['enabled']):
-            gene2 = innovations2[gene1["innovation"]]
-            child['genes'].append(copyGene(gene2))
+            child['genes'].append(copyGene(innovations2[gene1["innovation"]]))
         else:
             child['genes'].append(copyGene(gene1))
 
     child['maxneuron'] = max(g1['maxneuron'], g2['maxneuron'])
 
     for mutation, rate in g1['mutationRates'].items():
-        child['mutationRates'][
-            mutation] = rate
+        child['mutationRates'][mutation] = rate
 
     return child
 
@@ -413,17 +424,23 @@ def linkMutate(genome, forceBias):
 
     while neuron1 < Inputs and neuron2 < Inputs:
         # Both input nodes
-        neuron1 = randomNeuron(genome['genes'], False)
-        neuron2 = randomNeuron(genome['genes'], True)
+        return None
+
+    # neuron1 = randomNeuron(genome['genes'], False)
+    # neuron2 = randomNeuron(genome['genes'], True)
 
     newLink = newGene()
 
-    # if neuron2 < Inputs:
-    if neuron1 > neuron2:
-        # Swap output and input
-        temp = neuron1
-        neuron1 = neuron2
-        neuron2 = temp
+    if neuron2 < Inputs:
+        temp = neuron2
+        neuron2 = neuron1
+        neuron1 = temp
+
+    # if neuron1 > neuron2:
+    #     # Swap output and input
+    #     temp = neuron1
+    #     neuron1 = neuron2
+    #     neuron2 = temp
 
     newLink['into'] = neuron1
     newLink['out'] = neuron2
@@ -444,6 +461,7 @@ def linkMutate(genome, forceBias):
     newLink["weight"] = ((random.random() * 4) - 2)
 
     genome['genes'].append(newLink)
+    return None
 
 
 def nodeMutate(genome):
@@ -488,8 +506,7 @@ def enableDisableMutate(ge, enable: bool):
 
 
 def mutate(genome):
-    progress = genome['fitness'] / max(1, pool['maxFitness'])
-    adjustment = 0.9 + (0.2 * progress)
+
     for mutation, rate in genome["mutationRates"].items():
         # genome["mutationRates"][mutation] *= adjustment
         if random.randint(1, 2) == 1:
@@ -533,20 +550,26 @@ def mutate(genome):
 
 
 def disjoint(genes1: list, genes2: list):
-    # innovations1 = {g["innovation"] for g in genes1}
-    # innovations2 = {g["innovation"] for g in genes2}
-    #
-    # disjoint_count = 0
-    # for g in genes1:
-    #     if g["innovation"] not in innovations2:
-    #         disjoint_count += 1
-    # for g in genes2:
-    #     if g["innovation"] not in innovations1:
-    #         disjoint_count += 1
-    #
-    # n = max(len(genes1), len(genes2))
-    # return disjoint_count / n if n > 0 else 0
+    i1 = dict()
 
+    for g in genes1:
+        i1[g["innovation"]] = True
+
+    i2 = dict()
+    for g in genes2:
+        i2[g["innovation"]] = True
+
+    disjoint_count = 0
+    for g in genes1:
+        if g["innovation"] not in i2.keys():
+            disjoint_count += 1
+    for g in genes2:
+        if g["innovation"] not in i1.keys():
+            disjoint_count += 1
+
+    n = max(len(genes1), len(genes2))
+    return disjoint_count / n
+    #
     # i1 = {}
     # for i in range(len(genes1)):
     #     gene = genes1[i]
@@ -574,11 +597,12 @@ def disjoint(genes1: list, genes2: list):
     #
     # return disjointGenes / n
 
-    innov1 = {g["innovation"] for g in genes1}
-    innov2 = {g["innovation"] for g in genes2}
-
-    disjoint_genes = len(innov1 - innov2) + len(innov2 - innov1)
-    return disjoint_genes / max(len(genes1), len(genes2))
+    #
+    # innov1 = {g["innovation"] for g in genes1}
+    # innov2 = {g["innovation"] for g in genes2}
+    #
+    # disjoint_genes = len(innov1 - innov2) + len(innov2 - innov1)
+    # return disjoint_genes / max(len(genes1), len(genes2))
 
 
 def weight(genes1: list, genes2: list):
@@ -588,19 +612,18 @@ def weight(genes1: list, genes2: list):
         gene = genes2[i]
         i2[gene["innovation"]] = gene
 
-    sum = 0
+    val = 0
     coincident = 0
     for i in range(len(genes1)):
         gene = genes1[i]
         if gene["innovation"] in i2:
             gene2 = i2[gene["innovation"]]
-            sum += abs(gene["weight"] - gene2["weight"])
+            val += abs(gene["weight"] - gene2["weight"])
             coincident += 1
 
     # This shouldn't be here
-    if coincident == 0:
-        return 0
-    return sum / coincident
+    return float('inf') if coincident == 0 else val / coincident
+    return val / coincident
 
 
 def sameSpecies(genome1, genome2):
@@ -610,7 +633,17 @@ def sameSpecies(genome1, genome2):
     return (dd + dw) < DeltaThreshold
 
 
-# look at this function
+def adjustDeltaThreshold():
+    global DeltaThreshold
+    global pool
+    if len(pool['species']) > TargetSpeciesCount:
+        DeltaThreshold += DeltaThresholdAdjustmentStep
+        DeltaThreshold = min(MaxDeltaThreshold, DeltaThreshold)
+    elif len(pool['species']) < TargetSpeciesCount:
+        DeltaThreshold -= DeltaThresholdAdjustmentStep
+        DeltaThreshold = max(MinDeltaThreshold, DeltaThreshold)
+
+
 def rankGlobally():
     globe = []
     for s in range(len(pool['species'])):
@@ -644,7 +677,6 @@ def totalAverageFitness():
     return total
 
 
-# look at this one too
 def cullSpecies(cutToOne):
     for s in range(len(pool['species'])):
         species = pool['species'][s]
@@ -663,7 +695,6 @@ def cullSpecies(cutToOne):
         #
         # species['genomes'] = boob
 
-        # Whatever the fuck is going on up there. Have fun debugging :)
 
         remaining = math.ceil(len(species['genomes']) / 2)
 
@@ -713,13 +744,13 @@ def removeStaleSpecies():
 def removeWeakSpecies():
     survived = []
 
-    sum = totalAverageFitness()
+    total_sum_fitness = totalAverageFitness()
 
-    #
     for s in range(len(pool['species'])):
         species = pool['species'][s]
-        # breed = (species['averageFitness'] /() sum)
-        breed = math.floor((species['averageFitness'] / sum) * Population)
+        # breed = (species['averageFitness'] /() total_sum_fitness)
+        breed = math.floor(
+            (species['averageFitness'] / total_sum_fitness) * Population)
         if breed >= 1:
             survived.append(species)
 
@@ -761,16 +792,44 @@ def addToSpecies(child):
 
 def newGeneration():
     global TopScoresOfGeneration
-    Generations.append(pool['generation'])
+    global FitnessOfGeneration
+    global LargestTileOfGeneration
+
+    Generations.append(pool['generation'] + 1)
+
     if DrawProgressGraph:
         BestTopScores.append(max(TopScoresOfGeneration))
         updateProgressGraph(Generations, BestTopScores, Population)
 
-    AverageFitness.append(totalAverageFitness() / len(pool['species']))
+    AverageFitness.append(sum(FitnessOfGeneration)/len(FitnessOfGeneration))
+
     if DrawAverageFitness:
         updateAverageFitnessGraph(Generations, AverageFitness, Population)
 
+    LargestTilesOverGenerations.append(max(LargestTileOfGeneration))
+
+    if DrawLargestTileGraph:
+        viz.updateLargestTileGraph(Generations,
+                                   LargestTilesOverGenerations, Population)
+    if DrawGenomeNeuralNetwork:
+        bestFitness = {'fitness': float('-inf')}
+        s = 0
+        g = 0
+        for currentSpecies in range(len(pool['species'])):
+            for currentGenome in range(len(pool['species'][currentSpecies]['genomes'])):
+                if bestFitness['fitness'] < pool['species'][currentSpecies]['genomes'][currentGenome]['fitness']:
+                    bestFitness = pool['species'][currentSpecies]['genomes'][currentGenome]
+                    s = currentSpecies
+                    g = currentGenome
+
+        plt = drawGenomeGraph(
+            bestFitness,
+            s, g, Generations[-1])
+        plt.close()
+
     TopScoresOfGeneration = []
+    FitnessOfGeneration = []
+    LargestTileOfGeneration = []
 
     cullSpecies(False)  # Cull the bottom half of the species
     rankGlobally()
@@ -783,16 +842,17 @@ def newGeneration():
 
     removeWeakSpecies()
 
-    if random.randint(0, 10000) <= 1:
-        startExtinctionEvent()
+    # if random.randint(0, 10000) <= 1:
+    #     startExtinctionEvent()
 
-    sum = totalAverageFitness()
+    total_sum_fitness = totalAverageFitness()
     children = []
 
     for s in range(len(pool['species'])):
         species = pool['species'][s]
 
-        breed = math.floor((species['averageFitness'] / sum) * Population)
+        breed = math.floor(
+            (species['averageFitness'] / total_sum_fitness) * Population)
         for i in range(breed):
             children.append(breedChild(species))
 
@@ -807,6 +867,7 @@ def newGeneration():
         addToSpecies(child)
 
     pool['generation'] += 1
+    adjustDeltaThreshold()
     global MAX_TIME
     # if pool['generation'] < 20:
     #     MAX_TIME *= .9 # sets lower bound for MAX_Time
@@ -829,7 +890,6 @@ def initializePool():
         # new_species = newSpecies()
         # new_species['genomes'].append(basic)
         # pool['species'].append(new_species)
-    # initializeRun(pool['currentSpecies'], pool['currentSpecies'])
 
 
 def initializeRun(currentSpecies, currentGenome):
@@ -841,60 +901,80 @@ def initializeRun(currentSpecies, currentGenome):
 
     generateNetwork(genome)
 
-    # evaluateCurrent()
 
+def evaluateGenome(currentSpecies, currentGenome,
+                   indexOfBoard: tuple[int, int]):
+    global pool
 
-def evaluateCurrent(currentSpecies, currentGenome, index):
+    initializeRun(currentSpecies, currentGenome)
+
+    Boards[indexOfBoard[0]][indexOfBoard[1]].reset()
+
     species = pool['species'][currentSpecies]
     genome = species['genomes'][currentGenome]
 
     start = time.process_time()
     end = time.process_time()
 
-    while (not Boards[index].is_game_over() and end - start <
+    board = Boards[indexOfBoard[0]][indexOfBoard[1]]
+
+    while (not board.is_game_over() and end - start <
            MaxTimeBetweenEachMove):
+
         global inputs
 
-        inputs = getInputs(index)
-        old_score = Scores[index][0]
+        inputs = getInputs(indexOfBoard)
+        old_numMoves = board.getNumMoves()
 
         controller = evaluateNetwork(genome['network'], inputs)
-        Boards[index].input_movements(controller)
+        board.input_movements(controller)
 
-        getScore(index)
-
-        if old_score >= Scores[index][0]:
+        if old_numMoves >= board.getNumMoves():
             end = time.process_time()
 
-    Boards[index].end()
+    board.end()
 
-    new_score = Scores[index][0]
-
-    fitness = calculateFitness(index)
+    fitness = calculateFitness(indexOfBoard)
 
     if fitness <= 4:
         fitness = -1
 
     genome['fitness'] = fitness
 
-    pool['maxFitness'] = max(pool['maxFitness'], fitness)
+    # pool['maxFitness'] = max(pool['maxFitness'], fitness)
+    #
+    # pool['topScore'] = max(new_score, pool['topScore'])
 
-    pool['topScore'] = max(new_score, pool['topScore'])
+    new_score = Scores[indexOfBoard[0]][indexOfBoard[1]][0]
+
+    string_to_print = ("\nCurrent Generation: " +
+                       str(pool['generation']) +
+                       "\nCurrent Species: " +
+                       str(currentSpecies + 1) +
+                       ", Out of " + str(len(pool['species'])) +
+                       "\nCurrent Genome: " + str(currentGenome + 1) +
+                       ", Out of: " + str(len(species['genomes'])) +
+                       "\nNeuron Size: " +
+                       str(len(species['genomes'][currentGenome]['genes'])) +
+                       "\nCurrent Score: " + str(new_score) +
+                       "\nCurrent Fitness: " + str(genome['fitness']) + "\n")
+
+    print(string_to_print)
 
 
-def nextGenome(currentGenome: int, currentSpecies: int) -> tuple[int, int]:
+def nextGenome(currentSpecies: int, currentGenome: int) -> tuple[int, int]:
     currentGenome += 1
+
     if currentGenome >= len(
             pool['species'][currentSpecies]['genomes']):
+
         currentGenome = -1
-        pool['currentSpecies'] += 1
+
         if currentSpecies >= len(pool['species']):
             # newGeneration()
             currentSpecies = 0
-            # pool['currentSpecies'] += 1
 
-    return (currentGenome, currentSpecies)
-    # initializeRun()
+    return (currentSpecies, currentGenome)
 
 
 def fitnessAlreadyMeasured(currentSpecies, currentGenome):
@@ -921,8 +1001,6 @@ def playTop(currentSpecies, currentGenome):
     # pool['maxFitness'] = maxfitness
     # pool['currentFrame'] += 1
 
-
-#  Come back to these ones. Some data type misunderstandings
 # def writeFile(filename):
 #     file = open(filename, "w")
 #     file.write(str(pool['generation']) + "\n")
@@ -942,15 +1020,25 @@ def playTop(currentSpecies, currentGenome):
 
 
 # random_pad()
-def calculateFitness(index: int) -> float:
-    getScore(index)
-    new_score = Scores[index][0]
-    numMerge = Scores[index][1]
-    numMoves = Scores[index][2]
+
+def calculateFitness(indexOfBoard: tuple[int, int]) -> float:
+    getScore(indexOfBoard)
+
+    scoreArray = Scores[indexOfBoard[0]][indexOfBoard[1]]
+
+    new_score = scoreArray[0]
+    numMerge = scoreArray[1]
+    numMoves = scoreArray[2]
+
     TopScoresOfGeneration.append(new_score)
 
-    largest_tile = Boards[index].getLargestTile()
+
+    largest_tile = Boards[indexOfBoard[0]][indexOfBoard[1]].getLargestTile()
+    LargestTileOfGeneration.append(largest_tile)
     tile_bonus = {
+        8: 3,
+        16: 8,
+        32: 20,
         64: 50,
         128: 280,
         256: 800,
@@ -961,94 +1049,72 @@ def calculateFitness(index: int) -> float:
 
     if numMoves == 0:
         return -16
-
-    fitness = new_score ** 1.2 + (largest_tile * numMerge / numMoves)
-
+        #
+    fitness = new_score**2 + numMerge - numMoves
+    # fitness = new_score
     # fitness = new_score ** 1.2 + ((largest_tile**1.2) * numMerge / numMoves)
-    for tile, bonus in tile_bonus.items():
-        if largest_tile >= tile:
-            fitness += bonus
+    # for tile, bonus in tile_bonus.items():
+    #     if largest_tile >= tile:
+    #         fitness += bonus
     # fitness = new_score ** 2 + numMerge
 
-    # if not MadeAllMoves[index]:
-    #     fitness -= (new_score / 3)
-
-    tiles = getInputs(index)
+    tiles = getInputs(indexOfBoard)
     empty = 0
 
     for num in tiles:
+        for tile, bonus in tile_bonus.items():
+            if num >= tile:
+                fitness += bonus
+
         if num == -1:
             empty += 1
 
     fitness -= (empty * 3)
 
     # return new_score + numMerge * 25 + (Board[index].getLargestTile()*1.8)
+    FitnessOfGeneration.append(fitness)
     return fitness
 
 
-def evaluateSpecies(currentSpecies: int, currentGenome: int,
-                    index: int):
+def evaluateParentThread(currentSpecies: int, currentGenome: int,
+                         indexOfThread: int):
     global pool
-    initializeRun(currentSpecies, currentGenome)
-    species = pool['species'][currentSpecies]
-    genome = species['genomes'][currentGenome]
+    childThreads = THREADS[indexOfThread + 1]
 
-    if DrawGenomeNeuralNetwork:
-        plt = drawGenomeGraph(species['genomes'][pool['currentGenome']])
+    while currentGenome > -1:
 
-    evaluateCurrent(currentSpecies, currentGenome, index)
+        indexOfChildThread = 0
 
-    # old_score = Score[0]
-    #
-    # getScore()
-    # new_score = Score[0]
+        while (currentGenome > -1 and indexOfChildThread < len(childThreads)):
+            childThreads[indexOfChildThread] = threading.Thread(
+                target=evaluateGenome, args=(currentSpecies, currentGenome,
+                                             (indexOfThread // 2,
+                                              indexOfChildThread),))
 
-    new_score = Scores[index][0]
+            childThreads[indexOfChildThread].start()
+            currentSpecies, currentGenome = nextGenome(currentSpecies,
+                                                       currentGenome)
+            indexOfChildThread += 1
 
-    if True:
-        # print(new_score)
-        fitness = calculateFitness(index)
+        joinChildThreads(childThreads)
 
-        if fitness <= 4:
-            fitness = -1
+    joinChildThreads(childThreads)
 
-        genome['fitness'] = fitness
 
-        pool['maxFitness'] = max(pool['maxFitness'], fitness)
+def joinChildThreads(childThreads: list):
+    for i in range(len(childThreads)):
+        if childThreads[i].is_alive():
+            childThreads[i].join()
 
-        pool['topScore'] = max(new_score, pool['topScore'])
 
-        # pool['currentSpecies'] = 0
-        # pool['currentGenome'] = 0
-
-        # while fitnessAlreadyMeasured():
-    string_to_print = ("\nCurrent Generation: " +
-                       str(pool['generation']) +
-                       "\nCurrent Species: " +
-                       str(currentSpecies + 1) +
-                       ", Out of " + str(len(pool['species'])) +
-                       "\nCurrent Genome: " + str(currentGenome + 1) +
-                       ", Out of: " + str(len(species['genomes'])) +
-                       "\nNeuron Size: " +
-                       str(len(species['genomes'][currentGenome]['genes'])) +
-                       "\nCurrent Score: " + str(new_score) +
-                       "\nCurrent Fitness: " + str(fitness) + "\nTop Score: " +
-                       str(pool['topScore']) + "\nMax Fitness: " +
-                       str(pool['maxFitness']) + "\n")
-
-    print(string_to_print)
-
-    currentGenome, currentSpecies = nextGenome(currentGenome, currentSpecies)
-
-    Boards[index].reset()
-    if currentGenome == -1:
-        return None
-
-    evaluateSpecies(currentSpecies, currentGenome, index)
+def joinParentThreads():
+    for i in range(0, len(THREADS), 2):
+        if THREADS[i].is_alive():
+            THREADS[i].join()
 
 
 initializePool()
-initializeBoards(BOARD_SIZE)
+initializeBoards()
 
 if DrawProgressGraph:
     drawProgressGraph([], [], Population)
@@ -1056,42 +1122,38 @@ if DrawProgressGraph:
 if DrawAverageFitness:
     drawAverageFitnessGraph([], [], Population)
 
-
-def joinThreads():
-    for indexOfThread in range(len(Boards)):
-        if THREADS[indexOfThread].is_alive():
-            THREADS[indexOfThread].join()
-            THREADS_INUSE[0] -= 1
-
+if DrawLargestTileGraph:
+    viz.drawLargestTileGraph([], [], population=Population)
 
 while True:
-    # t = 0
-    # while t < THREADMAX:
+    global pool
 
-    currentSpecies = 0
-    currentGenome = 0
+    species = 0
+    genome = 0
 
-    while currentSpecies < len(pool['species']):
-        indexOfThread = 0
+    while species < len(pool['species']):
+        indexOfParentThread = 0
 
-        while (indexOfThread < len(Boards)
-               and currentSpecies < len(pool['species'])):
-            THREADS[indexOfThread] = (threading.Thread(target=evaluateSpecies,
-                                                       args=(currentSpecies, 0,
-                                                             indexOfThread,)))
+        while (indexOfParentThread < NumParentThreads
+               and species < len(pool['species'])):
+            THREADS[indexOfParentThread] = (
+                threading.Thread(target=evaluateParentThread,
+                                 args=(species, 0, indexOfParentThread,)))
 
-            THREADS[indexOfThread].start()
-            indexOfThread += 1
+            THREADS[indexOfParentThread].start()
 
-            currentSpecies += 1
+            indexOfParentThread += 2
 
-            THREADS_INUSE[0] += 1
+            species += 1
 
-        joinThreads()
+        joinParentThreads()
 
-    joinThreads()
+    joinParentThreads()
+
+    pool['topScore'] = max(max(TopScoresOfGeneration), pool['topScore'])
+    pool['maxFitness'] = max(max(FitnessOfGeneration), pool['maxFitness'])
+
+    print("\nTop Score: " + str(pool['topScore']) + "\nMax Fitness: " +
+          str(pool['maxFitness']) + "\n")
 
     newGeneration()
-
-    # print(pool['currentSpecies'])
-    # print(pool['currentGenome'])
